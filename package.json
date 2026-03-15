@@ -1,0 +1,29 @@
+{
+  "name": "putmein",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A dedicated software to handle all devops related stuffs with more secured way and with two factor check with the help of AI",
+  "main": "index.tsx",
+  "scripts": {
+    "start": "tsx index.tsx",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "bin": {
+    "putmein": "./index.tsx"
+  },
+  "keywords": [
+    "putmein"
+  ],
+  "author": "Putme.in",
+  "license": "ISC",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "dotenv": "^17.3.1",
+    "ink": "^6.8.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.2.4"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
+  }
+}
