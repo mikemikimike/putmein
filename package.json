@@ -5,11 +5,15 @@
   "description": "A dedicated software to handle all devops related stuffs with more secured way and with two factor check with the help of AI",
   "main": "index.tsx",
   "scripts": {
-    "start": "tsx index.tsx",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsup index.tsx src/**/*.ts src/**/*.tsx --format esm --clean",
+    "start": "node dist/index.js",
+    "daemon": "tsx src/daemon.ts",
+    "dev": "tsx index.tsx",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev:watch": "tsx watch index.tsx"
   },
   "bin": {
-    "putmein": "./index.tsx"
+    "putmein": "./dist/index.js"
   },
   "keywords": [
     "putmein"
@@ -20,10 +24,14 @@
     "@anthropic-ai/sdk": "^0.78.0",
     "dotenv": "^17.3.1",
     "ink": "^6.8.0",
-    "ink-text-input": "^6.0.0",
-    "react": "^19.2.4"
+    "node-global-key-listener": "^0.3.0",
+    "react": "^19.2.4",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.2"
   },
   "devDependencies": {
-    "tsx": "^4.21.0"
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "typescript": "^5.5.0"
   }
 }
