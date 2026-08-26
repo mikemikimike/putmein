@@ -62,7 +62,8 @@ export default function Hero() {
 
 function CommandBlock() {
   const [copied, setCopied] = useState(false);
-  const command = "curl -fsSL https://putme.in/install.sh | sh";
+  // const command = "curl -fsSL https://putme.in/install.sh | sh";
+  const command = "Coming Soon";
 
   const handleCopy = async () => {
     try {
