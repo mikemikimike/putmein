@@ -155,6 +155,13 @@ async function main() {
     copyDirRecursive(sourcePrismaDir, destPrismaDir);
   }
 
+  // Stage init-db.sql into dist
+  const initDbSqlPath = path.join(ROOT_DIR, "bin", "init-db.sql");
+  if (fs.existsSync(initDbSqlPath)) {
+    fs.copyFileSync(initDbSqlPath, path.join(DIST_DIR, "init-db.sql"));
+    log("Staged init-db.sql into dist/init-db.sql");
+  }
+
   // Next.js standalone docs require copying static files and public directory
   const rayStatic = path.join(RAY_DIR, ".next", "static");
   const destStatic = path.join(distRay, ".next", "static");

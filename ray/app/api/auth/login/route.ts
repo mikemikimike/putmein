@@ -81,10 +81,11 @@ export async function POST(request: NextRequest) {
     });
 
     return response;
-  } catch (error) {
-    console.error("Login error:", error);
+  } catch (error: any) {
+    console.error("Login route error:", error?.message || error);
+    if (error?.stack) console.error(error.stack);
     return NextResponse.json(
-      { error: "An unexpected error occurred. Please try again." },
+      { error: error?.message || "An unexpected error occurred. Please try again." },
       { status: 500 }
     );
   }

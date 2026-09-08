@@ -278,13 +278,25 @@ AGENT_AUTONOMOUS="false"
 # Step 6: Install PutmeIn Global Package & Launch
 # ==============================================================================
 Write-Step "6/6" "Installing PutmeIn Engine & Starting Services..."
+
+# Remove old shims from both NPM prefix and active Node directory (NVM Windows support)
+$cleanDirs = @()
 $npmPrefix = (npm config get prefix 2>$null)
-if ($npmPrefix) {
-    $prefix = $npmPrefix.Trim()
-    foreach ($binName in @("ray", "ray.cmd", "ray.ps1", "putmein", "putmein.cmd", "putmein.ps1")) {
-        $binFile = Join-Path $prefix $binName
-        if (Test-Path $binFile) {
-            Remove-Item -Path $binFile -Force -ErrorAction SilentlyContinue
+if ($npmPrefix) { $cleanDirs += $npmPrefix.Trim() }
+try {
+    $nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
+    if ($nodeExe) { $cleanDirs += (Split-Path $nodeExe) }
+} catch {}
+if ($env:APPDATA) { $cleanDirs += "$env:APPDATA\npm" }
+
+$binNames = @("ray", "ray.cmd", "ray.ps1", "putmein", "putmein.cmd", "putmein.ps1")
+foreach ($dir in ($cleanDirs | Select-Object -Unique)) {
+    if ($dir -and (Test-Path $dir)) {
+        foreach ($b in $binNames) {
+            $target = Join-Path $dir $b
+            if (Test-Path $target) {
+                Remove-Item -Path $target -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 }
@@ -296,36 +308,41 @@ npm install -g putmein-test@latest --force
 $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
 $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
 $env:Path = "$userPath;$machinePath"
-if ($npmPrefix -and ($env:Path -notlike "*$($npmPrefix.Trim())*")) {
-    $env:Path = "$($npmPrefix.Trim());$env:Path"
+foreach ($dir in ($cleanDirs | Select-Object -Unique)) {
+    if ($dir -and ($env:Path -notlike "*$dir*")) {
+        $env:Path = "$dir;$env:Path"
+    }
 }
 
-# If MySQL is running, sync prisma schema
+# If MySQL is running, initialize tables directly via SQL script (Zero external dependencies)
 if (Test-DockerRunning) {
     try {
-        $globalNpm = (npm root -g 2>$null)
-        if ($globalNpm) {
-            $pkgRayDir = Join-Path $globalNpm.Trim() "putmein-test\dist\ray"
-            if (Test-Path $pkgRayDir) {
-                Write-Color "  Synchronizing database schema..." Cyan
-                Push-Location $pkgRayDir
-                $envFilePath = Join-Path $env:USERPROFILE ".putmein\.env"
-                if (Test-Path $envFilePath) {
-                    $envLines = Get-Content $envFilePath
-                    foreach ($line in $envLines) {
-                        if ($line -match '^DATABASE_URL=(.+)$') {
-                            $env:DATABASE_URL = $matches[1].Trim('"').Trim("'")
-                        }
-                    }
+        $envFilePath = Join-Path $env:USERPROFILE ".putmein\.env"
+        $dbPass = "root"
+        if (Test-Path $envFilePath) {
+            $envLines = Get-Content $envFilePath
+            foreach ($line in $envLines) {
+                if ($line -match '^DATABASE_URL="?mysql://root:([^@]+)@') {
+                    $dbPass = $matches[1]
                 }
-                npx prisma db push --skip-generate --accept-data-loss 2>$null | Out-Null
-                Pop-Location
-                Write-Success "Database schema synchronized!"
             }
         }
-    } catch {
-        if ($pkgRayDir) { Pop-Location 2>$null }
-    }
+        $globalNpm = (npm root -g 2>$null)
+        $sqlScriptPath = ""
+        if ($globalNpm) {
+            $candidate = Join-Path $globalNpm.Trim() "putmein-test\bin\init-db.sql"
+            if (Test-Path $candidate) { $sqlScriptPath = $candidate }
+        }
+        if (-not $sqlScriptPath) {
+            $candidate = "$env:APPDATA\npm\node_modules\putmein-test\bin\init-db.sql"
+            if (Test-Path $candidate) { $sqlScriptPath = $candidate }
+        }
+        if ($sqlScriptPath -and (Test-Path $sqlScriptPath)) {
+            Write-Color "  Initializing database schema and default admin..." Cyan
+            Get-Content $sqlScriptPath | docker exec -i putmein-mysql mysql -uroot -p"$dbPass" putmein 2>$null
+            Write-Success "Database schema verified and admin user ready!"
+        }
+    } catch {}
 }
 
 # Reset PM2 daemon to guarantee clean process table

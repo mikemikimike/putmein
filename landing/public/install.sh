@@ -408,10 +408,206 @@ EOF
   success "Database engine ready!"
 fi
 
+# Ensure database password is known
+if [ -z "$DB_PASSWORD" ] && [ -f "$PUTMEIN_ENV_FILE" ]; then
+  DB_PASSWORD=$(grep "^DATABASE_URL=" "$PUTMEIN_ENV_FILE" 2>/dev/null | sed -E 's/.*:([^@]+)@.*/\1/' || true)
+fi
+
+# Initialize database schema directly inside MySQL container (Zero external dependencies)
+info "Initializing database tables and default admin account..."
+docker exec -i "$MYSQL_CONTAINER" mysql -uroot -p"${DB_PASSWORD}" putmein << 'EOSQL' 2>/dev/null || true
+CREATE TABLE IF NOT EXISTS `Post` (
+  `id` VARCHAR(191) NOT NULL,
+  `title` VARCHAR(191) NOT NULL,
+  `slug` VARCHAR(191) NOT NULL,
+  `content` LONGTEXT NOT NULL,
+  `excerpt` TEXT NULL,
+  `coverImage` VARCHAR(191) NULL,
+  `metaTitle` VARCHAR(191) NULL,
+  `metaDescription` TEXT NULL,
+  `metaKeywords` TEXT NULL,
+  `isPublished` BOOLEAN NOT NULL DEFAULT false,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `Post_slug_key`(`slug`),
+  INDEX `Post_slug_idx`(`slug`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `users` (
+  `id` VARCHAR(191) NOT NULL,
+  `email` VARCHAR(191) NOT NULL,
+  `password` VARCHAR(191) NOT NULL,
+  `name` VARCHAR(191) NOT NULL,
+  `role` VARCHAR(191) NOT NULL DEFAULT 'USER',
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `users_email_key`(`email`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `contacts` (
+  `id` VARCHAR(191) NOT NULL,
+  `name` VARCHAR(191) NOT NULL,
+  `email` VARCHAR(191) NOT NULL,
+  `subject` VARCHAR(191) NOT NULL,
+  `message` TEXT NOT NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `waitlists` (
+  `id` VARCHAR(191) NOT NULL,
+  `name` VARCHAR(191) NOT NULL,
+  `email` VARCHAR(191) NOT NULL,
+  `phone` VARCHAR(191) NOT NULL,
+  `reason` TEXT NOT NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ray_chat_sessions` (
+  `id` VARCHAR(191) NOT NULL,
+  `userId` VARCHAR(191) NOT NULL,
+  `title` VARCHAR(191) NOT NULL DEFAULT 'New Chat',
+  `model` VARCHAR(191) NOT NULL DEFAULT 'MiniMax-M3',
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  CONSTRAINT `ray_chat_sessions_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ray_chat_messages` (
+  `id` VARCHAR(191) NOT NULL,
+  `sessionId` VARCHAR(191) NOT NULL,
+  `role` VARCHAR(191) NOT NULL,
+  `content` LONGTEXT NOT NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  CONSTRAINT `ray_chat_messages_sessionId_fkey` FOREIGN KEY (`sessionId`) REFERENCES `ray_chat_sessions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ray_monitor_projects` (
+  `id` VARCHAR(191) NOT NULL,
+  `userId` VARCHAR(191) NOT NULL,
+  `name` VARCHAR(191) NOT NULL,
+  `projectPath` TEXT NOT NULL,
+  `logPaths` TEXT NOT NULL,
+  `logCommand` TEXT NULL,
+  `runCommand` TEXT NULL,
+  `intervalSec` INT NOT NULL DEFAULT 30,
+  `enabled` BOOLEAN NOT NULL DEFAULT true,
+  `status` VARCHAR(191) NOT NULL DEFAULT 'discovering',
+  `memory` LONGTEXT NULL,
+  `memoryStatus` VARCHAR(191) NULL,
+  `projectUrl` TEXT NULL,
+  `managedPid` INT NULL,
+  `managedLogFile` TEXT NULL,
+  `lastChecked` DATETIME(3) NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  CONSTRAINT `ray_monitor_projects_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ray_monitor_alerts` (
+  `id` VARCHAR(191) NOT NULL,
+  `projectId` VARCHAR(191) NOT NULL,
+  `severity` VARCHAR(191) NOT NULL,
+  `message` TEXT NOT NULL,
+  `rawLog` LONGTEXT NOT NULL,
+  `dismissed` BOOLEAN NOT NULL DEFAULT false,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  CONSTRAINT `ray_monitor_alerts_projectId_fkey` FOREIGN KEY (`projectId`) REFERENCES `ray_monitor_projects` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ray_deployments` (
+  `id` VARCHAR(191) NOT NULL,
+  `userId` VARCHAR(191) NOT NULL,
+  `projectId` VARCHAR(191) NULL,
+  `name` VARCHAR(191) NOT NULL,
+  `sourceType` VARCHAR(191) NOT NULL,
+  `repoUrl` TEXT NULL,
+  `branch` VARCHAR(191) NULL DEFAULT 'main',
+  `commitHash` VARCHAR(191) NULL,
+  `commitMessage` TEXT NULL,
+  `projectPath` TEXT NOT NULL,
+  `dockerfile` LONGTEXT NULL,
+  `containerId` VARCHAR(191) NULL,
+  `containerName` VARCHAR(191) NULL,
+  `imageName` VARCHAR(191) NULL,
+  `hostPort` INT NULL,
+  `containerPort` INT NULL DEFAULT 3000,
+  `envVars` TEXT NULL,
+  `status` VARCHAR(191) NOT NULL DEFAULT 'pending',
+  `buildLogs` LONGTEXT NULL,
+  `deployUrl` TEXT NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  CONSTRAINT `ray_deployments_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ray_github_integrations` (
+  `id` VARCHAR(191) NOT NULL,
+  `userId` VARCHAR(191) NOT NULL,
+  `githubUsername` VARCHAR(191) NULL,
+  `accessToken` TEXT NULL,
+  `avatarUrl` TEXT NULL,
+  `webhookSecret` VARCHAR(191) NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  CONSTRAINT `ray_github_integrations_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ray_pipelines` (
+  `id` VARCHAR(191) NOT NULL,
+  `userId` VARCHAR(191) NOT NULL,
+  `projectId` VARCHAR(191) NULL,
+  `name` VARCHAR(191) NOT NULL,
+  `repoUrl` TEXT NOT NULL,
+  `branch` VARCHAR(191) NOT NULL DEFAULT 'main',
+  `autoDeploy` BOOLEAN NOT NULL DEFAULT true,
+  `dockerfilePath` VARCHAR(191) NULL DEFAULT 'Dockerfile',
+  `port` INT NOT NULL DEFAULT 3000,
+  `status` VARCHAR(191) NOT NULL DEFAULT 'idle',
+  `lastRunAt` DATETIME(3) NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  CONSTRAINT `ray_pipelines_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ray_pipeline_runs` (
+  `id` VARCHAR(191) NOT NULL,
+  `pipelineId` VARCHAR(191) NOT NULL,
+  `commitHash` VARCHAR(191) NULL,
+  `commitMessage` TEXT NULL,
+  `author` VARCHAR(191) NULL,
+  `status` VARCHAR(191) NOT NULL DEFAULT 'running',
+  `stages` LONGTEXT NULL,
+  `logs` LONGTEXT NULL,
+  `durationMs` INT NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  CONSTRAINT `ray_pipeline_runs_pipelineId_fkey` FOREIGN KEY (`pipelineId`) REFERENCES `ray_pipelines` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+INSERT INTO `users` (`id`, `email`, `password`, `name`, `role`, `createdAt`, `updatedAt`)
+SELECT 'cm_admin_default_01', 'admin@putme.in', '$2b$10$KehRdOpONjPGoTrnoUO/BemB5neS8js8teKaUo1QkoeNd0NZpA6pe', 'Admin', 'ADMIN', NOW(3), NOW(3)
+WHERE NOT EXISTS (SELECT 1 FROM `users` WHERE `email` = 'admin@putme.in');
+EOSQL
+success "Database schema verified and admin user ready!"
+
 # ==============================================================================
 # Step 6: Install PutmeIn Global CLI & Launch PM2 Daemon
 # ==============================================================================
 step "6/6" "Installing PutmeIn Engine & Starting Services..."
+
+# Remove old shims to guarantee zero conflicts
+rm -f "$NPM_PREFIX/bin/ray" "$NPM_PREFIX/bin/putmein" "/usr/local/bin/ray" "/usr/local/bin/putmein" 2>/dev/null || true
 
 info "Installing 'putmein-test' package from NPM..."
 if npm install -g putmein-test@latest --force 2>/dev/null; then
@@ -422,24 +618,23 @@ else
   success "PutmeIn CLI installed successfully!"
 fi
 
-# Apply initial database tables via Prisma inside installed putmein package
+# Locate exact package directory
 GLOBAL_NPM_ROOT=$(npm root -g 2>/dev/null || echo "/usr/local/lib/node_modules")
 PUTMEIN_PKG_DIR="$GLOBAL_NPM_ROOT/putmein-test"
 
-if [ -d "$PUTMEIN_PKG_DIR/dist/ray" ]; then
-  info "Synchronizing database schema..."
-  (
-    cd "$PUTMEIN_PKG_DIR/dist/ray"
-    DATABASE_URL=$(grep "^DATABASE_URL=" "$PUTMEIN_ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
-    if [ -n "$DATABASE_URL" ]; then
-      export DATABASE_URL
-      npx prisma db push --skip-generate --accept-data-loss &>/dev/null || true
-    fi
-  )
-  success "Database schema synchronized!"
+# Guarantee ray binary symlink is present and in PATH
+if [ -f "$PUTMEIN_PKG_DIR/bin/ray.js" ]; then
+  chmod +x "$PUTMEIN_PKG_DIR/bin/ray.js" 2>/dev/null || true
+  ln -sf "$PUTMEIN_PKG_DIR/bin/ray.js" "$NPM_PREFIX/bin/ray" 2>/dev/null || true
+  ln -sf "$PUTMEIN_PKG_DIR/bin/ray.js" /usr/local/bin/ray 2>/dev/null || true
 fi
 
+# Temporarily stop systemd PM2 auto-restart to prevent resurrecting stale processes
+systemctl stop pm2-root 2>/dev/null || true
+systemctl stop "pm2-$(whoami 2>/dev/null || echo root)" 2>/dev/null || true
+
 # Reset PM2 daemon to guarantee clean process table and free ports
+pm2 delete putmein-ray putmein-brain 2>/dev/null || true
 pm2 delete all 2>/dev/null || true
 pm2 kill 2>/dev/null || true
 if command -v fuser &>/dev/null; then
@@ -448,13 +643,18 @@ elif command -v lsof &>/dev/null; then
   lsof -ti:4567,4500 | xargs kill -9 2>/dev/null || true
 fi
 
-# Start services via the ray CLI
-info "Starting PutmeIn background services..."
-ray restart 2>/dev/null || ray start || true
+# Start services directly using fresh package ecosystem config
+info "Starting PutmeIn background services (Ray & Brain)..."
+if [ -f "$PUTMEIN_PKG_DIR/ecosystem.config.js" ]; then
+  pm2 start "$PUTMEIN_PKG_DIR/ecosystem.config.js" --update-env || ray start || true
+else
+  ray restart 2>/dev/null || ray start || true
+fi
 
-# Register autostart on system boot and persist process state
-ray starter 2>/dev/null || true
+# Persist fresh PM2 state to dump and re-enable system boot startup
 pm2 save --force 2>/dev/null || true
+ray starter 2>/dev/null || true
+systemctl restart pm2-root 2>/dev/null || true
 
 # Helper for perfectly aligned box borders
 print_box_line() {

@@ -20,15 +20,15 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || "Login failed");
+        setError(data.error || "Login failed. Please check server logs.");
         return;
       }
       router.push("/chat");
       router.refresh();
     } catch {
-      setError("Network error. Please try again.");
+      setError("Network connection error. Please try again.");
     } finally {
       setLoading(false);
     }
