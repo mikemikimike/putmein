@@ -414,16 +414,16 @@ fi
 step "6/6" "Installing PutmeIn Engine & Starting Services..."
 
 info "Installing 'putmein-test' package from NPM..."
-if npm install -g putmein-test 2>/dev/null; then
+if npm install -g putmein-test@latest --force 2>/dev/null; then
   success "PutmeIn CLI installed globally!"
 else
   warn "Permission denied installing globally. Attempting with elevated privileges..."
-  run_elevated npm install -g putmein-test
+  run_elevated npm install -g putmein-test@latest --force
   success "PutmeIn CLI installed successfully!"
 fi
 
 # Apply initial database tables via Prisma inside installed putmein package
-GLOBAL_NPM_ROOT=$(npm root -g)
+GLOBAL_NPM_ROOT=$(npm root -g 2>/dev/null || echo "/usr/local/lib/node_modules")
 PUTMEIN_PKG_DIR="$GLOBAL_NPM_ROOT/putmein-test"
 
 if [ -d "$PUTMEIN_PKG_DIR/dist/ray" ]; then
@@ -432,24 +432,29 @@ if [ -d "$PUTMEIN_PKG_DIR/dist/ray" ]; then
     cd "$PUTMEIN_PKG_DIR/dist/ray"
     DATABASE_URL=$(grep "^DATABASE_URL=" "$PUTMEIN_ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || true)
     if [ -n "$DATABASE_URL" ]; then
+      export DATABASE_URL
       npx prisma db push --skip-generate --accept-data-loss &>/dev/null || true
     fi
   )
   success "Database schema synchronized!"
 fi
 
-# Reset PM2 daemon to guarantee clean process table
+# Reset PM2 daemon to guarantee clean process table and free ports
+pm2 delete all 2>/dev/null || true
 pm2 kill 2>/dev/null || true
 if command -v fuser &>/dev/null; then
   fuser -k 4567/tcp 4500/tcp 2>/dev/null || true
+elif command -v lsof &>/dev/null; then
+  lsof -ti:4567,4500 | xargs kill -9 2>/dev/null || true
 fi
 
 # Start services via the ray CLI
 info "Starting PutmeIn background services..."
-ray start || true
+ray restart 2>/dev/null || ray start || true
 
-# Register autostart on system boot
+# Register autostart on system boot and persist process state
 ray starter 2>/dev/null || true
+pm2 save --force 2>/dev/null || true
 
 # Helper for perfectly aligned box borders
 print_box_line() {

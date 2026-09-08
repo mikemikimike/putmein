@@ -147,6 +147,14 @@ async function main() {
     copyDirRecursive(sourceDotPrisma, destDotPrisma);
   }
 
+  // Ensure schema.prisma is staged for runtime migrations and prisma db push
+  const sourcePrismaDir = path.join(RAY_DIR, "prisma");
+  const destPrismaDir = path.join(distRay, "prisma");
+  if (fs.existsSync(sourcePrismaDir)) {
+    log("Staging schema.prisma into dist/ray/prisma...");
+    copyDirRecursive(sourcePrismaDir, destPrismaDir);
+  }
+
   // Next.js standalone docs require copying static files and public directory
   const rayStatic = path.join(RAY_DIR, ".next", "static");
   const destStatic = path.join(distRay, ".next", "static");
@@ -185,7 +193,6 @@ async function main() {
     "src",
     "app",
     "scripts",
-    "prisma",
   ];
 
   for (const f of forbiddenFiles) {

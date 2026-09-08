@@ -278,8 +278,27 @@ AGENT_AUTONOMOUS="false"
 # Step 6: Install PutmeIn Global Package & Launch
 # ==============================================================================
 Write-Step "6/6" "Installing PutmeIn Engine & Starting Services..."
+$npmPrefix = (npm config get prefix 2>$null)
+if ($npmPrefix) {
+    $prefix = $npmPrefix.Trim()
+    foreach ($binName in @("ray", "ray.cmd", "ray.ps1", "putmein", "putmein.cmd", "putmein.ps1")) {
+        $binFile = Join-Path $prefix $binName
+        if (Test-Path $binFile) {
+            Remove-Item -Path $binFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 Write-Color "  Installing putmein-test package from NPM..." Cyan
-npm install -g putmein-test
+npm install -g putmein-test@latest --force
+
+# Refresh environment PATH for current session
+$machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+$userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+$env:Path = "$userPath;$machinePath"
+if ($npmPrefix -and ($env:Path -notlike "*$($npmPrefix.Trim())*")) {
+    $env:Path = "$($npmPrefix.Trim());$env:Path"
+}
 
 # If MySQL is running, sync prisma schema
 if (Test-DockerRunning) {
@@ -290,6 +309,15 @@ if (Test-DockerRunning) {
             if (Test-Path $pkgRayDir) {
                 Write-Color "  Synchronizing database schema..." Cyan
                 Push-Location $pkgRayDir
+                $envFilePath = Join-Path $env:USERPROFILE ".putmein\.env"
+                if (Test-Path $envFilePath) {
+                    $envLines = Get-Content $envFilePath
+                    foreach ($line in $envLines) {
+                        if ($line -match '^DATABASE_URL=(.+)$') {
+                            $env:DATABASE_URL = $matches[1].Trim('"').Trim("'")
+                        }
+                    }
+                }
                 npx prisma db push --skip-generate --accept-data-loss 2>$null | Out-Null
                 Pop-Location
                 Write-Success "Database schema synchronized!"
@@ -301,48 +329,63 @@ if (Test-DockerRunning) {
 }
 
 # Reset PM2 daemon to guarantee clean process table
+try { pm2 delete all 2>$null | Out-Null } catch {}
 try { pm2 kill 2>$null | Out-Null } catch {}
 
-# Start services via ray CLI
+# Start services via ray CLI or node fallback
 Write-Color "  Starting PutmeIn services (Ray & Brain)..." Cyan
-ray start
+$rayCmd = Get-Command ray -ErrorAction SilentlyContinue
+if ($rayCmd) {
+    ray start
+} else {
+    $globalNpm = (npm root -g 2>$null)
+    $rayScript = ""
+    if ($globalNpm) {
+        $rayScript = Join-Path $globalNpm.Trim() "putmein-test\bin\ray.js"
+    }
+    if ($rayScript -and (Test-Path $rayScript)) {
+        node $rayScript start
+    } else {
+        node "$env:APPDATA\npm\node_modules\putmein-test\bin\ray.js" start
+    }
+}
 
-# Output Finish
+# Output Finish (Pure ASCII borders for 100% cross-terminal fidelity)
 function Write-BoxLine([string]$content = "", [ConsoleColor]$color = [ConsoleColor]::White) {
     $innerWidth = 66
     $len = $content.Length
     $pad = [Math]::Max(0, $innerWidth - $len)
     $spaces = " " * $pad
-    Write-Host "│" -ForegroundColor Cyan -NoNewline
+    Write-Host "|" -ForegroundColor Cyan -NoNewline
     Write-Host "  " -NoNewline
     if ($content.Length -gt 0) {
         Write-Host $content -ForegroundColor $color -NoNewline
     }
     Write-Host "$spaces  " -NoNewline
-    Write-Host "│" -ForegroundColor Cyan
+    Write-Host "|" -ForegroundColor Cyan
 }
 
-$boxBorder = "─" * 70
+$boxBorder = "-" * 70
 Write-Host ""
-Write-Host "╭$boxBorder╮" -ForegroundColor Cyan
+Write-Host "+$boxBorder+" -ForegroundColor Cyan
 Write-BoxLine ""
-Write-BoxLine "✔ PutmeIn successfully installed and running!" -color Green
+Write-BoxLine "[OK] PutmeIn successfully installed and running!" -color Green
 Write-BoxLine ""
 Write-BoxLine "Web Dashboard (Ray):    http://localhost:4567"
 Write-BoxLine "Network Dashboard:      http://127.0.0.1:4567"
 Write-BoxLine "AI Backend (Brain):     http://localhost:4500"
 Write-BoxLine ""
 Write-BoxLine "Default Admin Login:"
-Write-BoxLine "  • Email:    admin@putme.in" -color Yellow
-Write-BoxLine "  • Password: admin123" -color Yellow
+Write-BoxLine "  * Email:    admin@putme.in" -color Yellow
+Write-BoxLine "  * Password: admin123" -color Yellow
 Write-BoxLine ""
 Write-BoxLine "Useful CLI Commands:"
-Write-BoxLine "  • ray status         Inspect service health and memory" -color Yellow
-Write-BoxLine "  • ray logs           Stream real-time unified logs" -color Yellow
-Write-BoxLine "  • ray stop           Stop running background services" -color Yellow
-Write-BoxLine "  • ray restart        Restart background services" -color Yellow
-Write-BoxLine "  • ray cohen          Launch interactive terminal TUI" -color Yellow
-Write-BoxLine "  • ray --no-startup   Disable launching on system boot" -color Yellow
+Write-BoxLine "  * ray status         Inspect service health and memory" -color Yellow
+Write-BoxLine "  * ray logs           Stream real-time unified logs" -color Yellow
+Write-BoxLine "  * ray stop           Stop running background services" -color Yellow
+Write-BoxLine "  * ray restart        Restart background services" -color Yellow
+Write-BoxLine "  * ray cohen          Launch interactive terminal TUI" -color Yellow
+Write-BoxLine "  * ray --no-startup   Disable launching on system boot" -color Yellow
 Write-BoxLine ""
-Write-Host "╰$boxBorder╯" -ForegroundColor Cyan
+Write-Host "+$boxBorder+" -ForegroundColor Cyan
 Write-Host ""
