@@ -192,13 +192,14 @@ fi
 # ==============================================================================
 # Step 3: Check & Install Node.js & NPM
 # ==============================================================================
-step "3/6" "Checking Node.js Environment..."
+step "3/6" "Checking Node.js & npm Environment..."
 
 install_node_linux() {
-  info "Installing Node.js LTS (v20)..."
+  info "Installing Node.js LTS (v20) and npm..."
   if command -v apt-get &>/dev/null; then
     curl -fsSL https://deb.nodesource.com/setup_20.x | run_elevated bash -
-    run_elevated apt-get install -y nodejs
+    run_elevated apt-get update -qq || true
+    run_elevated apt-get install -y -qq nodejs
   elif command -v dnf &>/dev/null; then
     curl -fsSL https://rpm.nodesource.com/setup_20.x | run_elevated bash -
     run_elevated dnf install -y nodejs
@@ -207,6 +208,8 @@ install_node_linux() {
     run_elevated yum install -y nodejs
   elif command -v pacman &>/dev/null; then
     run_elevated pacman -Sy --noconfirm nodejs npm
+  elif command -v apk &>/dev/null; then
+    run_elevated apk add --no-cache nodejs npm
   fi
 }
 
@@ -214,11 +217,15 @@ NEED_NODE=false
 if ! command -v node &>/dev/null; then
   NEED_NODE=true
 else
-  NODE_MAJOR=$(node -v | cut -d'.' -f1 | tr -d 'v')
-  if [ "$NODE_MAJOR" -lt 18 ]; then
-    warn "Node.js is installed but version $NODE_MAJOR is too old (requires >= 18)."
+  NODE_MAJOR=$(node -v 2>/dev/null | cut -d'.' -f1 | tr -d 'v')
+  if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt 18 ]; then
+    warn "Node.js is installed but version ($NODE_MAJOR) is too old (requires >= 18)."
     NEED_NODE=true
   fi
+fi
+
+if ! command -v npm &>/dev/null; then
+  NEED_NODE=true
 fi
 
 if [ "$NEED_NODE" = true ]; then
@@ -228,18 +235,40 @@ if [ "$NEED_NODE" = true ]; then
     if command -v brew &>/dev/null; then
       brew install node
     else
-      error "Homebrew not found. Please install Node.js from https://nodejs.org/"
+      error "Homebrew not found. Please install Node.js and npm from https://nodejs.org/"
       exit 1
     fi
   fi
 fi
 
-if command -v node &>/dev/null; then
+# Fallback: On Debian/Ubuntu distros where nodejs and npm are packaged separately, ensure npm is installed
+if ! command -v npm &>/dev/null && [ "$OS" = "Linux" ]; then
+  info "npm package is missing. Installing npm via system package manager..."
+  if command -v apt-get &>/dev/null; then
+    run_elevated apt-get update -qq || true
+    run_elevated apt-get install -y -qq npm || true
+  elif command -v dnf &>/dev/null; then
+    run_elevated dnf install -y npm || true
+  elif command -v yum &>/dev/null; then
+    run_elevated yum install -y npm || true
+  fi
+fi
+
+if command -v node &>/dev/null && command -v npm &>/dev/null; then
   success "Node.js $(node -v) is available"
   success "npm v$(npm -v) is available"
 else
-  error "Node.js installation failed. Please install Node >= 18 manually."
+  error "Node.js (>= 18) and npm are required. Please install them and re-run this script."
   exit 1
+fi
+
+# Ensure npm global binary path is in current shell session's PATH
+NPM_PREFIX=$(npm config get prefix 2>/dev/null || echo "/usr/local")
+if [ -d "$NPM_PREFIX/bin" ] && [[ ":$PATH:" != *":$NPM_PREFIX/bin:"* ]]; then
+  export PATH="$NPM_PREFIX/bin:$PATH"
+fi
+if [ -d "/usr/local/bin" ] && [[ ":$PATH:" != *":/usr/local/bin:"* ]]; then
+  export PATH="/usr/local/bin:$PATH"
 fi
 
 # ==============================================================================
@@ -254,9 +283,9 @@ else
   if npm install -g pm2 2>/dev/null; then
     success "PM2 installed globally!"
   else
-    info "Permissions require elevated install (sudo)..."
+    warn "Direct global install failed. Attempting with elevated privileges..."
     run_elevated npm install -g pm2
-    success "PM2 installed successfully with elevated privileges!"
+    success "PM2 installed successfully!"
   fi
 fi
 
