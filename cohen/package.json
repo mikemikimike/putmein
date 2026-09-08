@@ -1,0 +1,21 @@
+{
+  "name": "cohen-tui",
+  "version": "1.0.0",
+  "description": "cohen TUI - Go/Charm edition. DevOps is not a joke. Powered by Ozias.",
+  "scripts": {
+    "prebuild": "mkdir -p bin",
+    "build": "/opt/homebrew/bin/go build -o bin/cohen .",
+    "dev": "/opt/homebrew/bin/go run .",
+    "start": "npm run build && ./bin/cohen",
+    "tidy": "/opt/homebrew/bin/go mod tidy",
+    "vet": "/opt/homebrew/bin/go vet ./..."
+  },
+  "keywords": [
+    "cohen",
+    "tui",
+    "devops",
+    "ozias"
+  ],
+  "author": "Putme.in",
+  "license": "ISC"
+}

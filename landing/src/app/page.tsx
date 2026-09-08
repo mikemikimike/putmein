@@ -1,6 +1,7 @@
 import React from 'react';
 import Navbar from '@/components/Navbar';
 import Hero from '@/components/Hero';
+import RayShowcase from '@/components/RayShowcase';
 import Problem from '@/components/Problem';
 import Solution from '@/components/Solution';
 import Features from '@/components/Features';
@@ -18,6 +19,7 @@ export default function Home() {
       <CommunityPopup />
       <Navbar />
       <Hero />
+      <RayShowcase />
       <Problem />
       <Solution />
       <Features />

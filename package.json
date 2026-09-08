@@ -1,0 +1,42 @@
+{
+  "name": "putmein",
+  "version": "1.0.1",
+  "description": "Autonomous DevOps & Infrastructure Orchestrator powered by Ray and Brain",
+  "main": "bin/ray.js",
+  "bin": {
+    "ray": "./bin/ray.js",
+    "putmein": "./bin/ray.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "ecosystem.config.js",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build-dist.js",
+    "build:ray": "cd ray && npx prisma generate && npm run build",
+    "build:brain": "cd brain && CGO_ENABLED=0 go build -o bin/brain .",
+    "start": "node bin/ray.js start",
+    "stop": "node bin/ray.js stop",
+    "restart": "node bin/ray.js restart",
+    "status": "node bin/ray.js status",
+    "logs": "node bin/ray.js logs",
+    "cohen": "node bin/ray.js cohen"
+  },
+  "keywords": [
+    "putmein",
+    "ray",
+    "brain",
+    "devops",
+    "infrastructure",
+    "monitoring",
+    "docker",
+    "ai"
+  ],
+  "author": "Putme.in",
+  "license": "ISC",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

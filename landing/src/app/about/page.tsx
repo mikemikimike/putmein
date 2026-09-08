@@ -6,7 +6,7 @@ import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'About Us | Putme.in',
-  description: 'Learn about PutMe.in — the team behind your Digital SRE Agent that scales your engineering without the infrastructure toil.',
+  description: 'Learn about PutMe.in, the team behind your Digital SRE Agent that scales your engineering without the infrastructure toil.',
 };
 
 export default function AboutPage() {

@@ -1,0 +1,22 @@
+# Source code (standalone dist bundles are whitelisted in package.json)
+brain/
+ray/
+cohen/
+landing/
+scripts/
+
+# Dev configs and agent directories
+.git/
+.gitignore
+.agents/
+.claude/
+skills-lock.json
+install.sh
+install.ps1
+
+# Secrets and local runtime states
+.env
+.env*
+*.log
+*.pem
+.DS_Store

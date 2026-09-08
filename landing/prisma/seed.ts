@@ -1,15 +1,20 @@
 import { PrismaClient } from '@prisma/client'
+import { PrismaMariaDb } from '@prisma/adapter-mariadb'
 import * as bcrypt from 'bcryptjs'
 
-const prisma = new PrismaClient()
+const adapter = new PrismaMariaDb(process.env.DATABASE_URL!)
+const prisma = new PrismaClient({ adapter })
 
 async function main() {
-  const hashedPassword = await bcrypt.hash('zIMdQKG8cgvKm5TN42mu5OrFTShdoBJxy1qrFpbx4KdRTpOpWctKlGS1hagMtASx', 10)
+  const hashedPassword = await bcrypt.hash('admin123', 10)
 
   // Create Admin User
   const admin = await prisma.user.upsert({
     where: { email: 'admin@putme.in' },
-    update: {},
+    update: {
+      password: hashedPassword,
+      role: 'ADMIN',
+    },
     create: {
       email: 'admin@putme.in',
       name: 'Admin Admin',

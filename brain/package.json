@@ -1,0 +1,22 @@
+{
+  "name": "brain",
+  "version": "1.0.0",
+  "description": "brain: shared AI backend for cohen and ray. DevOps AI agent powered by Ozias.",
+  "scripts": {
+    "prebuild": "mkdir -p bin",
+    "build": "/opt/homebrew/bin/go build -o bin/brain .",
+    "dev": "/opt/homebrew/bin/go run .",
+    "start": "npm run build && ./bin/brain",
+    "tidy": "/opt/homebrew/bin/go mod tidy",
+    "vet": "/opt/homebrew/bin/go vet ./..."
+  },
+  "keywords": [
+    "brain",
+    "ai",
+    "devops",
+    "ozias",
+    "putmein"
+  ],
+  "author": "Putme.in",
+  "license": "ISC"
+}

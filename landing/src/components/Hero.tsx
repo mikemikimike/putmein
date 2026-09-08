@@ -48,10 +48,10 @@ export default function Hero() {
         </p>
 
         <div className="flex flex-col items-center justify-center gap-4 md:gap-5 w-full px-4 sm:px-0 mt-8">
-          <a href="#demo" className="group backdrop-blur-lg relative inline-flex w-full sm:w-auto items-center justify-center gap-3 px-8 py-3.5 md:py-4 text-base md:text-lg font-semibold text-white rounded-xl bg-gradient-to-b from-zinc-600/50 to-zinc-800/50 border border-white/15 shadow-[0_4px_20px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.1)] transition-all hover:-translate-y-0.5 hover:bg-gradient-to-b hover:from-zinc-500/60 hover:to-zinc-800/60 hover:border-white/30 hover:shadow-[0_6px_25px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.2)] overflow-hidden">
-            <span className="relative z-10">Book a 15-Min Demo Now</span>
+          {/* <a href="#demo" className="group backdrop-blur-lg relative inline-flex w-full sm:w-auto items-center justify-center gap-3 px-8 py-3.5 md:py-4 text-base md:text-lg font-semibold text-white rounded-xl bg-gradient-to-b from-zinc-600/50 to-zinc-800/50 border border-white/15 shadow-[0_4px_20px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.1)] transition-all hover:-translate-y-0.5 hover:bg-gradient-to-b hover:from-zinc-500/60 hover:to-zinc-800/60 hover:border-white/30 hover:shadow-[0_6px_25px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.2)] overflow-hidden">
+            <span className="relative z-10">Join the Waitlist</span>
             <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent skew-x-[20deg] transition-transform duration-700 group-hover:translate-x-[150%]"></span>
-          </a>
+          </a> */}
 
           <CommandBlock />
         </div>
@@ -61,9 +61,13 @@ export default function Hero() {
 }
 
 function CommandBlock() {
+  const [os, setOs] = useState<'unix' | 'win'>('unix');
   const [copied, setCopied] = useState(false);
-  // const command = "curl -fsSL https://putme.in/install.sh | sh";
-  const command = "Coming Soon";
+
+  const command =
+    os === 'unix'
+      ? 'curl -fsSL https://putme.in/install.sh | bash'
+      : 'powershell -c "irm https://putme.in/install.ps1 | iex"';
 
   const handleCopy = async () => {
     try {
@@ -76,29 +80,72 @@ function CommandBlock() {
   };
 
   return (
-    <div
-      onClick={handleCopy}
-      className="group relative flex items-center gap-3 px-4 py-2.5 md:px-5 md:py-3 bg-zinc-900/40 backdrop-blur-md border border-white/10 rounded-xl cursor-pointer transition-all hover:border-white/20 hover:bg-zinc-900/60 shadow-2xl overflow-hidden min-w-0 max-w-full"
-    >
-      <div className="flex items-center gap-2 text-zinc-500 select-none">
-        <Terminal className="w-4 h-4" />
-        <span className="text-xs md:text-sm font-mono opacity-50">$</span>
+    <div className="w-full max-w-2xl mx-auto flex flex-col items-center gap-2">
+      {/* OS Tab Switcher */}
+      <div className="flex items-center gap-1.5 p-1 bg-zinc-900/60 border border-white/10 rounded-lg text-xs font-mono select-none">
+        <button
+          type="button"
+          onClick={() => setOs('unix')}
+          className={`px-3 py-1 rounded-md transition-all ${
+            os === 'unix'
+              ? 'bg-white/15 text-white font-medium shadow-sm'
+              : 'text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          macOS / Linux
+        </button>
+        <button
+          type="button"
+          onClick={() => setOs('win')}
+          className={`px-3 py-1 rounded-md transition-all ${
+            os === 'win'
+              ? 'bg-white/15 text-white font-medium shadow-sm'
+              : 'text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          Windows
+        </button>
       </div>
 
-      <code className="text-sm md:text-base font-mono text-zinc-200 whitespace-nowrap overflow-x-auto no-scrollbar pr-6 md:pr-8">
-        {command}
-      </code>
+      {/* Full-width Terminal Command Bar */}
+      <div
+        onClick={handleCopy}
+        className="group relative w-full flex items-center justify-between gap-3 px-5 py-3.5 bg-zinc-900/50 backdrop-blur-md border border-white/10 rounded-xl cursor-pointer transition-all hover:border-white/20 hover:bg-zinc-900/70 shadow-2xl"
+      >
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-zinc-500 select-none flex-shrink-0">
+            <Terminal className="w-4 h-4 text-green-400/80" />
+            <span className="text-xs md:text-sm font-mono opacity-60">
+              {os === 'unix' ? '$' : 'PS>'}
+            </span>
+          </div>
 
-      <div className="absolute right-3 md:right-4 flex items-center justify-center ml-2">
-        {copied ? (
-          <Check className="w-4 h-4 text-green-400 animate-in fade-in zoom-in duration-300" />
-        ) : (
-          <Copy className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
-        )}
+          <code className="text-xs sm:text-sm md:text-base font-mono text-zinc-200 tracking-tight select-all">
+            {command}
+          </code>
+        </div>
+
+        <div className="flex items-center gap-2 flex-shrink-0 pl-3 border-l border-white/10">
+          {copied ? (
+            <span className="inline-flex items-center gap-1 text-xs font-mono text-green-400">
+              <Check className="w-4 h-4" />
+              <span className="hidden sm:inline">Copied</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-xs font-mono text-zinc-400 group-hover:text-zinc-200 transition-colors">
+              <Copy className="w-4 h-4" />
+              <span className="hidden sm:inline">Copy</span>
+            </span>
+          )}
+        </div>
+
+        {/* Subtle background glow on copy */}
+        <div
+          className={`absolute inset-0 bg-green-500/5 transition-opacity duration-500 pointer-events-none rounded-xl ${
+            copied ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
       </div>
-
-      {/* Subtle background glow on copy */}
-      <div className={`absolute inset-0 bg-green-500/5 transition-opacity duration-500 pointer-events-none ${copied ? 'opacity-100' : 'opacity-0'}`} />
     </div>
   );
 }

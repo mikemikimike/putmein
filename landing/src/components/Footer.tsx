@@ -13,9 +13,14 @@ export default function Footer() {
 
         {/* Links */}
         <ul className="flex flex-wrap justify-center gap-6 list-none">
+          <li><Link href="/ray" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">Ray</Link></li>
+          <li><Link href="/ozias" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">Ozias</Link></li>
+          <li><Link href="/cohen" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">Cohen</Link></li>
+          <li><Link href="/docs" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">Docs</Link></li>
+          <li><Link href="/api-docs" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">API</Link></li>
           <li><Link href="/about" className="text-sm font-medium text-zinc-500 hover:text-white transition-colors">About Us</Link></li>
-          <li><Link href="/terms" className="text-sm font-medium text-zinc-500 hover:text-white transition-colors">Terms of Service</Link></li>
-          <li><Link href="/privacy" className="text-sm font-medium text-zinc-500 hover:text-white transition-colors">Privacy Policy</Link></li>
+          <li><Link href="/terms" className="text-sm font-medium text-zinc-500 hover:text-white transition-colors">Terms</Link></li>
+          <li><Link href="/privacy" className="text-sm font-medium text-zinc-500 hover:text-white transition-colors">Privacy</Link></li>
           <li><Link href="/contact" className="text-sm font-medium text-zinc-500 hover:text-white transition-colors">Contact</Link></li>
         </ul>
 

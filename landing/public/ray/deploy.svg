@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" fill="none">
+  <defs>
+    <linearGradient id="bgGrad2" x1="0" y1="0" x2="1200" y2="675" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#09090b" />
+      <stop offset="100%" stop-color="#020202" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="675" rx="16" fill="url(#bgGrad2)" stroke="#27272a" stroke-width="1.5" />
+
+  <!-- Top App Navigation bar -->
+  <rect x="0" y="0" width="1200" height="60" fill="#121215" />
+  <line x1="0" y1="60" x2="1200" y2="60" stroke="#27272a" stroke-width="1" />
+  <circle cx="36" cy="30" r="6" fill="#ef4444" />
+  <circle cx="56" cy="30" r="6" fill="#f59e0b" />
+  <circle cx="76" cy="30" r="6" fill="#10b981" />
+  <text x="120" y="35" fill="#a1a1aa" font-family="monospace" font-size="14" font-weight="600">ray-deploy / pipelines / rollout-generation-1042</text>
+  <rect x="970" y="18" width="190" height="26" rx="6" fill="#10b981" fill-opacity="0.15" stroke="#10b981" stroke-opacity="0.3" />
+  <text x="986" y="35" fill="#10b981" font-family="monospace" font-size="12" font-weight="bold">ATOMIC ROLLOUT LIVE</text>
+
+  <!-- Left: Nix Pipeline Graph -->
+  <rect x="40" y="90" width="600" height="540" rx="14" fill="#131316" stroke="#27272a" stroke-width="1" />
+  <text x="70" y="130" fill="#ffffff" font-family="system-ui, sans-serif" font-size="20" font-weight="bold">Deterministic Nix Derivation Stages</text>
+  <text x="70" y="152" fill="#71717a" font-family="monospace" font-size="12">Trigger: Git Commit #8f31b2e • Bit-for-bit Parity Verified</text>
+
+  <!-- Stage 1 -->
+  <rect x="70" y="180" width="540" height="85" rx="10" fill="#18181b" stroke="#0dd325" stroke-opacity="0.4" />
+  <circle cx="100" cy="222" r="14" fill="#0dd325" fill-opacity="0.15" />
+  <text x="95" y="227" fill="#0dd325" font-family="system-ui" font-size="14" font-weight="bold">1</text>
+  <text x="130" y="215" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="bold">Nix Flake Derivation Compilation</text>
+  <text x="130" y="235" fill="#a1a1aa" font-family="monospace" font-size="12">sha256:d83b1029ca9... in ephemeral sandbox</text>
+  <text x="520" y="225" fill="#0dd325" font-family="monospace" font-size="13">8.4s</text>
+
+  <!-- Stage 2 -->
+  <rect x="70" y="285" width="540" height="85" rx="10" fill="#18181b" stroke="#27272a" />
+  <circle cx="100" cy="327" r="14" fill="#3b82f6" fill-opacity="0.15" />
+  <text x="95" y="332" fill="#3b82f6" font-family="system-ui" font-size="14" font-weight="bold">2</text>
+  <text x="130" y="320" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="bold">Shadow Socket Isolation &amp; Port Probe</text>
+  <text x="130" y="340" fill="#a1a1aa" font-family="monospace" font-size="12">Passed 14/14 automated health probes on :3001</text>
+  <text x="520" y="330" fill="#3b82f6" font-family="monospace" font-size="13">2.1s</text>
+
+  <!-- Stage 3 -->
+  <rect x="70" y="390" width="540" height="85" rx="10" fill="#18181b" stroke="#27272a" />
+  <circle cx="100" cy="432" r="14" fill="#a855f7" fill-opacity="0.15" />
+  <text x="95" y="437" fill="#a855f7" font-family="system-ui" font-size="14" font-weight="bold">3</text>
+  <text x="130" y="425" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="bold">Atomic Symlink Switchover</text>
+  <text x="130" y="445" fill="#a1a1aa" font-family="monospace" font-size="12">Active generation pointer switched instantly (0 dropped requests)</text>
+  <text x="515" y="435" fill="#a855f7" font-family="monospace" font-size="13">42ms</text>
+
+  <!-- Stage 4 -->
+  <rect x="70" y="495" width="540" height="85" rx="10" fill="#18181b" stroke="#27272a" />
+  <circle cx="100" cy="537" r="14" fill="#0dd325" fill-opacity="0.15" />
+  <text x="95" y="542" fill="#0dd325" font-family="system-ui" font-size="14" font-weight="bold">4</text>
+  <text x="130" y="530" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="bold">SOC 2 Cryptographic Audit Seal</text>
+  <text x="130" y="550" fill="#a1a1aa" font-family="monospace" font-size="12">Immutable deployment ledger signed &amp; anchored</text>
+  <text x="515" y="540" fill="#0dd325" font-family="monospace" font-size="13">18ms</text>
+
+  <!-- Right: Terminal Build Output -->
+  <rect x="670" y="90" width="490" height="540" rx="14" fill="#0c0c0e" stroke="#27272a" stroke-width="1" />
+  <text x="700" y="130" fill="#ffffff" font-family="monospace" font-size="14" font-weight="bold"># ray-nix-builder --profile=production</text>
+  <line x1="670" y1="145" x2="1160" y2="145" stroke="#27272a" />
+
+  <text x="700" y="180" fill="#71717a" font-family="monospace" font-size="12">&gt; resolving flake inputs from lockfile...</text>
+  <text x="700" y="210" fill="#71717a" font-family="monospace" font-size="12">&gt; evaluating derivation: /nix/store/8q9f-prod-v2.drv</text>
+  <text x="700" y="240" fill="#3b82f6" font-family="monospace" font-size="12">&gt; building sandbox container: [====================] 100%</text>
+  <text x="700" y="270" fill="#71717a" font-family="monospace" font-size="12">&gt; verified cgroup isolation: memory=2GB, pids=256</text>
+  <text x="700" y="300" fill="#71717a" font-family="monospace" font-size="12">&gt; probing internal endpoint :3001/api/health...</text>
+  <text x="700" y="330" fill="#0dd325" font-family="monospace" font-size="12">&gt; HTTP/1.1 200 OK (latency: 1.8ms)</text>
+  <text x="700" y="360" fill="#71717a" font-family="monospace" font-size="12">&gt; initiating zero-downtime atomic symlink swap</text>
+  <text x="700" y="390" fill="#a855f7" font-family="monospace" font-size="12">&gt; ln -sfn /nix/store/8q9f-prod-v2 /var/www/current</text>
+  <text x="700" y="420" fill="#0dd325" font-family="monospace" font-size="12">&gt; zero dropped sockets verified across Go Shadow Proxy</text>
+  <text x="700" y="460" fill="#ffffff" font-family="monospace" font-size="13" font-weight="bold">&gt;&gt; DEPLOYMENT #1042 LIVE IN 10.56 SECONDS &lt;&lt;</text>
+  <text x="700" y="500" fill="#71717a" font-family="monospace" font-size="11">Audit hash: sha256:7f8a91c3b4e5d6...</text>
+</svg>

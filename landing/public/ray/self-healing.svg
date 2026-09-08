@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" fill="none">
+  <defs>
+    <linearGradient id="bgGrad3" x1="0" y1="0" x2="1200" y2="675" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#09090b" />
+      <stop offset="100%" stop-color="#020202" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="675" rx="16" fill="url(#bgGrad3)" stroke="#27272a" stroke-width="1.5" />
+
+  <!-- Top bar -->
+  <rect x="0" y="0" width="1200" height="60" fill="#121215" />
+  <line x1="0" y1="60" x2="1200" y2="60" stroke="#27272a" stroke-width="1" />
+  <circle cx="36" cy="30" r="6" fill="#ef4444" />
+  <circle cx="56" cy="30" r="6" fill="#f59e0b" />
+  <circle cx="76" cy="30" r="6" fill="#10b981" />
+  <text x="120" y="35" fill="#a1a1aa" font-family="monospace" font-size="14" font-weight="600">ray-sre / incident-response / auto-remediation-log</text>
+  <rect x="960" y="18" width="200" height="26" rx="6" fill="#3b82f6" fill-opacity="0.15" stroke="#3b82f6" stroke-opacity="0.3" />
+  <text x="975" y="35" fill="#3b82f6" font-family="monospace" font-size="12" font-weight="bold">AUTONOMOUS SRE: ENGAGED</text>
+
+  <!-- Incident Timeline Card -->
+  <rect x="40" y="90" width="1120" height="540" rx="14" fill="#131316" stroke="#27272a" stroke-width="1" />
+  <text x="70" y="130" fill="#ffffff" font-family="system-ui, sans-serif" font-size="20" font-weight="bold">Sub-Second Incident Remediation &amp; Shadow Proxy Loop</text>
+  <text x="70" y="152" fill="#71717a" font-family="monospace" font-size="12">Autonomous detection, traffic interception, crash diagnosis, and zero-downtime recovery</text>
+
+  <!-- Step 1: Crash -->
+  <rect x="70" y="180" width="1060" height="90" rx="10" fill="#18181b" stroke="#ef4444" stroke-opacity="0.5" />
+  <rect x="90" y="200" width="90" height="26" rx="6" fill="#ef4444" fill-opacity="0.2" />
+  <text x="100" y="217" fill="#ef4444" font-family="monospace" font-size="12" font-weight="bold">00:00:00</text>
+  <text x="200" y="215" fill="#ffffff" font-family="system-ui, sans-serif" font-size="16" font-weight="bold">Primary Worker Crash Intercepted (HTTP 502 / OOM Signal)</text>
+  <text x="200" y="240" fill="#a1a1aa" font-family="monospace" font-size="13">Worker PID 4012 crashed due to excessive image buffer allocation. Upstream port :3000 stopped responding.</text>
+  <text x="1040" y="225" fill="#ef4444" font-family="monospace" font-size="13">CRITICAL</text>
+
+  <!-- Step 2: Shadow Proxy -->
+  <rect x="70" y="285" width="1060" height="90" rx="10" fill="#18181b" stroke="#f59e0b" stroke-opacity="0.5" />
+  <rect x="90" y="305" width="90" height="26" rx="6" fill="#f59e0b" fill-opacity="0.2" />
+  <text x="96" y="322" fill="#f59e0b" font-family="monospace" font-size="12" font-weight="bold">+ 640ms</text>
+  <text x="200" y="320" fill="#ffffff" font-family="system-ui, sans-serif" font-size="16" font-weight="bold">Go Shadow Proxy Reroute (&lt;800ms Failover SLA)</text>
+  <text x="200" y="345" fill="#a1a1aa" font-family="monospace" font-size="13">Go Shadow Proxy caught 100% incoming TCP sockets. Buffered requests &amp; redirected to warm fallback instance without dropped packets.</text>
+  <text x="1025" y="330" fill="#f59e0b" font-family="monospace" font-size="13">FAILOVER OK</text>
+
+  <!-- Step 3: Self-Healing -->
+  <rect x="70" y="390" width="1060" height="90" rx="10" fill="#18181b" stroke="#3b82f6" stroke-opacity="0.5" />
+  <rect x="90" y="410" width="90" height="26" rx="6" fill="#3b82f6" fill-opacity="0.2" />
+  <text x="96" y="427" fill="#3b82f6" font-family="monospace" font-size="12" font-weight="bold">+ 1.85s</text>
+  <text x="200" y="425" fill="#ffffff" font-family="system-ui, sans-serif" font-size="16" font-weight="bold">Autonomous Root-Cause Isolation &amp; Clean Regeneration</text>
+  <text x="200" y="450" fill="#a1a1aa" font-family="monospace" font-size="13">Ozias SRE agent isolated memory leak, purged corrupted thread state, regenerated Nix derivation, and launched fresh container.</text>
+  <text x="1035" y="435" fill="#3b82f6" font-family="monospace" font-size="13">REPAIRING</text>
+
+  <!-- Step 4: Resolved -->
+  <rect x="70" y="495" width="1060" height="90" rx="10" fill="#18181b" stroke="#0dd325" stroke-opacity="0.5" />
+  <rect x="90" y="515" width="90" height="26" rx="6" fill="#0dd325" fill-opacity="0.2" />
+  <text x="96" y="532" fill="#0dd325" font-family="monospace" font-size="12" font-weight="bold">+ 2.94s</text>
+  <text x="200" y="530" fill="#ffffff" font-family="system-ui, sans-serif" font-size="16" font-weight="bold">100% Production Health Restored &amp; Audit Sealed</text>
+  <text x="200" y="555" fill="#a1a1aa" font-family="monospace" font-size="13">Traffic shifted back to primary worker. 0 customer errors logged. Cryptographic incident autopsy committed to vault.</text>
+  <text x="1030" y="540" fill="#0dd325" font-family="monospace" font-size="13">RESOLVED</text>
+</svg>

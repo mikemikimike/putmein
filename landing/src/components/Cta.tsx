@@ -16,7 +16,7 @@ export default function Cta() {
             Join the waitlist today and secure a <span className="text-white font-medium">50% lifetime discount</span> on your Digital SRE Agent. Limited spots available for the early access beta.
           </p>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto mt-auto">
+          {/* <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto mt-auto">
             <a href="/waitlist" className="inline-flex w-full sm:w-auto items-center justify-center gap-2 px-8 py-4 text-lg font-semibold text-black bg-white rounded-xl shadow-[0_0_20px_rgba(255,255,255,0.3)] transition-all hover:bg-zinc-200 hover:scale-105 hover:shadow-[0_0_30px_rgba(255,255,255,0.5)]">
               Get Early Access Now
             </a>
@@ -24,7 +24,7 @@ export default function Cta() {
             <a href="/contact" className="inline-flex w-full sm:w-auto items-center justify-center gap-2 px-8 py-4 text-lg font-medium text-white rounded-xl border border-white/20 bg-black/40 backdrop-blur-sm transition-all hover:bg-white/10 hover:border-white/40">
               Book a 15-Min Demo
             </a>
-          </div>
+          </div> */}
         </div>
       </PixelCard>
     </section>

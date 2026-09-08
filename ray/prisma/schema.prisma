@@ -1,0 +1,228 @@
+// This is your Prisma schema file for ray dashboard
+// Uses the same MySQL database as the landing project
+// IMPORTANT: We do NOT drop or alter existing tables (users, contacts, waitlists, Post)
+// We only add new tables prefixed with ray_ to avoid conflicts
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// =============================================
+// EXISTING TABLES (DO NOT ALTER)
+// These mirror the landing project schema exactly
+// =============================================
+
+model Post {
+  id              String   @id @default(cuid())
+  title           String
+  slug            String   @unique
+  content         String   @db.LongText
+  excerpt         String?  @db.Text
+  coverImage      String?
+  metaTitle       String?
+  metaDescription String?  @db.Text
+  metaKeywords    String?  @db.Text
+  isPublished     Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([slug])
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("USER")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations to ray-specific tables
+  chatSessions       RayChatSession[]
+  monitorProjects    RayMonitorProject[]
+  deployments        RayDeployment[]
+  githubIntegrations RayGithubIntegration[]
+  pipelines          RayPipeline[]
+
+  @@map("users")
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  subject   String
+  message   String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@map("contacts")
+}
+
+model Waitlist {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String
+  reason    String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@map("waitlists")
+}
+
+// =============================================
+// NEW RAY-SPECIFIC TABLES
+// =============================================
+
+model RayChatSession {
+  id        String           @id @default(cuid())
+  userId    String
+  title     String           @default("New Chat")
+  model     String           @default("MiniMax-M3")
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  RayChatMessage[]
+
+  @@map("ray_chat_sessions")
+}
+
+model RayChatMessage {
+  id        String         @id @default(cuid())
+  sessionId String
+  role      String         // "user" | "assistant"
+  content   String         @db.LongText
+  createdAt DateTime       @default(now())
+  session   RayChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("ray_chat_messages")
+}
+
+// =============================================
+// MONITOR TABLES (additive — never alters existing tables)
+// =============================================
+
+model RayMonitorProject {
+  id             String   @id @default(cuid())
+  userId         String
+  name           String
+  projectPath    String   @db.Text  // root path of the project to monitor
+  logPaths       String   @db.Text  // JSON array of discovered/additional log paths
+  logCommand     String?  @db.Text  // optional shell command to fetch logs
+  runCommand     String?  @db.Text  // command used to start the project (for Ray-managed run)
+  intervalSec    Int      @default(30)
+  enabled        Boolean  @default(true)
+  status         String   @default("discovering")  // "discovering" | "active" | "paused" | "error"
+  memory         String?  @db.LongText  // AI-written project summary / memory file
+  memoryStatus   String?  // "pending" | "analyzing" | "done" | "error"
+  projectUrl     String?  @db.Text  // URL to open the running project (e.g. http://localhost:3000)
+  managedPid     Int?     // PID of Ray-managed process (if Ray is running it)
+  managedLogFile String?  @db.Text  // log file path for Ray-managed process
+  lastChecked    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alerts         RayMonitorAlert[]
+
+  @@map("ray_monitor_projects")
+}
+
+model RayMonitorAlert {
+  id        String            @id @default(cuid())
+  projectId String
+  severity  String            // "info" | "warn" | "error" | "critical" | "vulnerable"
+  message   String            @db.Text
+  rawLog    String            @db.LongText
+  dismissed Boolean           @default(false)
+  createdAt DateTime          @default(now())
+  project   RayMonitorProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("ray_monitor_alerts")
+}
+
+// =============================================
+// DEPLOYMENT & GITHUB TABLES (additive)
+// =============================================
+
+model RayDeployment {
+  id            String   @id @default(cuid())
+  userId        String
+  projectId     String?  // linked RayMonitorProject id if added to monitor
+  name          String
+  sourceType    String   // "github" | "upload" | "local"
+  repoUrl       String?  @db.Text
+  branch        String?  @default("main")
+  commitHash    String?
+  commitMessage String?  @db.Text
+  projectPath   String   @db.Text
+  dockerfile    String?  @db.LongText
+  containerId   String?
+  containerName String?
+  imageName     String?
+  hostPort      Int?
+  containerPort Int?     @default(3000)
+  envVars       String?  @db.Text // JSON key-values
+  status        String   @default("pending") // "pending" | "building" | "deploying" | "healthy" | "failed" | "stopped"
+  buildLogs     String?  @db.LongText
+  deployUrl     String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("ray_deployments")
+}
+
+model RayGithubIntegration {
+  id             String   @id @default(cuid())
+  userId         String
+  githubUsername String?
+  accessToken    String?  @db.Text
+  avatarUrl      String?  @db.Text
+  webhookSecret  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("ray_github_integrations")
+}
+
+model RayPipeline {
+  id             String           @id @default(cuid())
+  userId         String
+  projectId      String?          // linked RayMonitorProject id if exists
+  name           String
+  repoUrl        String           @db.Text
+  branch         String           @default("main")
+  autoDeploy     Boolean          @default(true)
+  dockerfilePath String?          @default("Dockerfile")
+  port           Int              @default(3000)
+  status         String           @default("idle") // "idle" | "running" | "success" | "failed"
+  lastRunAt      DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runs           RayPipelineRun[]
+
+  @@map("ray_pipelines")
+}
+
+model RayPipelineRun {
+  id            String      @id @default(cuid())
+  pipelineId    String
+  commitHash    String?
+  commitMessage String?     @db.Text
+  author        String?
+  status        String      @default("running") // "running" | "success" | "failed"
+  stages        String?     @db.LongText // JSON array: [{name, status, duration, logs}]
+  logs          String?     @db.LongText
+  durationMs    Int?
+  createdAt     DateTime    @default(now())
+  pipeline      RayPipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+
+  @@map("ray_pipeline_runs")
+}
+
