@@ -80,7 +80,7 @@ function CommandBlock() {
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto flex flex-col items-center gap-2">
+    <div className="w-full max-w-[680px] mx-auto flex flex-col items-center gap-2.5">
       {/* OS Tab Switcher */}
       <div className="flex items-center gap-1.5 p-1 bg-zinc-900/60 border border-white/10 rounded-lg text-xs font-mono select-none">
         <button
@@ -110,17 +110,17 @@ function CommandBlock() {
       {/* Full-width Terminal Command Bar */}
       <div
         onClick={handleCopy}
-        className="group relative w-full flex items-center justify-between gap-3 px-5 py-3.5 bg-zinc-900/50 backdrop-blur-md border border-white/10 rounded-xl cursor-pointer transition-all hover:border-white/20 hover:bg-zinc-900/70 shadow-2xl"
+        className="group relative w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3 sm:py-3.5 bg-zinc-900/50 backdrop-blur-md border border-white/10 rounded-xl cursor-pointer transition-all hover:border-white/20 hover:bg-zinc-900/70 shadow-2xl"
       >
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-zinc-500 select-none flex-shrink-0">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1 overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1.5 sm:gap-2 text-zinc-500 select-none flex-shrink-0">
             <Terminal className="w-4 h-4 text-green-400/80" />
             <span className="text-xs md:text-sm font-mono opacity-60">
               {os === 'unix' ? '$' : 'PS>'}
             </span>
           </div>
 
-          <code className="text-xs sm:text-sm md:text-base font-mono text-zinc-200 tracking-tight select-all">
+          <code className="text-xs sm:text-sm md:text-[14px] lg:text-[15px] font-mono text-zinc-200 tracking-tight whitespace-nowrap select-all">
             {command}
           </code>
         </div>

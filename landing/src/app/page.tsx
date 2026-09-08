@@ -16,7 +16,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-black text-white font-sans overflow-x-hidden selection:bg-blue-500/30">
       <CursorGlow />
-      <CommunityPopup />
+      {/* <CommunityPopup /> */}
       <Navbar />
       <Hero />
       <RayShowcase />

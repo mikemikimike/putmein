@@ -2,37 +2,41 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 
-// Load local user config from ~/.putmein/.env if it exists
-const configDir = path.join(os.homedir(), ".putmein");
-const userEnvPath = path.join(configDir, ".env");
+// Load configuration from all possible env locations in priority order
 let userEnv = {};
 
-if (fs.existsSync(userEnvPath)) {
-  const content = fs.readFileSync(userEnvPath, "utf-8");
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith("#") && trimmed.includes("=")) {
-      const idx = trimmed.indexOf("=");
-      const key = trimmed.slice(0, idx).trim();
-      const val = trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, "");
-      userEnv[key] = val;
+const envCandidates = [
+  path.join(os.homedir(), ".putmein", ".env"),
+  path.join(__dirname, "ray", ".env"),
+  path.join(__dirname, ".env"),
+  path.join(__dirname, "..", ".env"),
+];
+
+for (const envPath of envCandidates) {
+  if (fs.existsSync(envPath)) {
+    const content = fs.readFileSync(envPath, "utf-8");
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith("#") && trimmed.includes("=")) {
+        const idx = trimmed.indexOf("=");
+        const key = trimmed.slice(0, idx).trim();
+        const val = trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, "");
+        if (!userEnv[key]) {
+          userEnv[key] = val;
+        }
+      }
     }
   }
 }
 
-// Fallback to project root .env if userEnv is empty
-const rootEnvPath = path.join(__dirname, ".env");
-if (Object.keys(userEnv).length === 0 && fs.existsSync(rootEnvPath)) {
-  const content = fs.readFileSync(rootEnvPath, "utf-8");
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith("#") && trimmed.includes("=")) {
-      const idx = trimmed.indexOf("=");
-      const key = trimmed.slice(0, idx).trim();
-      const val = trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, "");
-      userEnv[key] = val;
-    }
-  }
+// Ensure DATABASE_URL is never undefined
+if (!userEnv.DATABASE_URL) {
+  userEnv.DATABASE_URL = process.env.DATABASE_URL || "mysql://root:root@127.0.0.1:3306/putmein";
+}
+
+// Ensure JWT_SECRET is never undefined
+if (!userEnv.JWT_SECRET) {
+  userEnv.JWT_SECRET = process.env.JWT_SECRET || "putmein-jwt-secret-default-key-2024";
 }
 
 // Resolve paths for Brain binary

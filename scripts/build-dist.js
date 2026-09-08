@@ -218,6 +218,51 @@ async function main() {
     copyDirRecursive(rayPublic, destPublic);
   }
 
+  // Prepend environment loader to dist/ray/server.js so standalone Next.js always has DATABASE_URL & JWT_SECRET
+  const distServerJs = path.join(distRay, "server.js");
+  if (fs.existsSync(distServerJs)) {
+    const originalServerCode = fs.readFileSync(distServerJs, "utf-8");
+    const envBootstrapCode = `// PutmeIn standalone runtime environment loader
+(function() {
+  const fs = require('fs');
+  const path = require('path');
+  const os = require('os');
+  if (!process.env.DATABASE_URL) {
+    const candidates = [
+      path.join(os.homedir(), '.putmein', '.env'),
+      path.join(__dirname, '..', '..', 'ray', '.env'),
+      path.join(__dirname, '..', '..', '.env'),
+      path.join(process.cwd(), '.env'),
+    ];
+    for (const p of candidates) {
+      try {
+        if (fs.existsSync(p)) {
+          const content = fs.readFileSync(p, 'utf-8');
+          for (const line of content.split('\\n')) {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+              const idx = trimmed.indexOf('=');
+              const k = trimmed.slice(0, idx).trim();
+              const v = trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, '');
+              if (!process.env[k]) process.env[k] = v;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+  }
+  if (!process.env.DATABASE_URL) {
+    process.env.DATABASE_URL = "mysql://root:root@127.0.0.1:3306/putmein";
+  }
+  if (!process.env.JWT_SECRET) {
+    process.env.JWT_SECRET = "putmein-jwt-secret-default-key-2024";
+  }
+})();
+`;
+    fs.writeFileSync(distServerJs, envBootstrapCode + originalServerCode, "utf-8");
+    log("Injected environment bootstrapper into dist/ray/server.js");
+  }
+
   // 6. Security & Cleanliness Sanitization: Purge ALL secrets, .env files, and raw source code from dist/
   log("Sanitizing dist: removing all .env files and raw source code...");
   const forbiddenFiles = [

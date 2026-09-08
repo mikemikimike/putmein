@@ -156,7 +156,7 @@ export default function DownloadPage() {
               >
                 <div className="flex items-center gap-2.5 overflow-hidden">
                   <span className="text-zinc-500 font-mono text-xs select-none">CMD / PS&gt;</span>
-                  <code className="text-xs sm:text-sm font-mono text-zinc-200 truncate select-all">
+                  <code className="text-xs sm:text-sm font-mono text-zinc-200 whitespace-nowrap truncate select-all">
                     powershell -c &quot;irm https://putme.in/install.ps1 | iex&quot;
                   </code>
                 </div>
