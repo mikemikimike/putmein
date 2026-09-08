@@ -25,8 +25,7 @@ export default function LoginPage() {
         setError(data.error || "Login failed. Please check server logs.");
         return;
       }
-      router.push("/chat");
-      router.refresh();
+      window.location.href = "/chat";
     } catch {
       setError("Network connection error. Please try again.");
     } finally {

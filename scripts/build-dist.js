@@ -77,7 +77,7 @@ async function main() {
   for (const target of brainTargets) {
     const outPath = path.join(DIST_DIR, "brain", target.name);
     try {
-      execSync(`go build -o "${outPath}" .`, {
+      execSync(`go build -ldflags="-s -w" -trimpath -o "${outPath}" .`, {
         cwd: BRAIN_DIR,
         env: { ...process.env, CGO_ENABLED: "0", GOOS: target.os, GOARCH: target.arch },
         stdio: "inherit",
@@ -93,7 +93,7 @@ async function main() {
   const brainBinaryName = isWindows ? "brain.exe" : "brain";
   const brainOutPath = path.join(DIST_DIR, "brain", brainBinaryName);
   try {
-    execSync(`go build -o "${brainOutPath}" .`, {
+    execSync(`go build -ldflags="-s -w" -trimpath -o "${brainOutPath}" .`, {
       cwd: BRAIN_DIR,
       env: { ...process.env, CGO_ENABLED: "0" },
       stdio: "inherit",
@@ -104,13 +104,35 @@ async function main() {
   // 3. Build Cohen Go Binary (if cohen directory exists)
   if (fs.existsSync(COHEN_DIR)) {
     log("Compiling Cohen Go binary (CGO_ENABLED=0)...");
-    const cohenBinaryName = isWindows ? "cohen.exe" : "cohen";
+    const cohenTargets = [
+      { os: "linux", arch: "amd64", name: "cohen-linux-x64" },
+      { os: "linux", arch: "arm64", name: "cohen-linux-arm64" },
+      { os: "darwin", arch: "arm64", name: "cohen-darwin-arm64" },
+      { os: "darwin", arch: "amd64", name: "cohen-darwin-x64" },
+      { os: "windows", arch: "amd64", name: "cohen-win32-x64.exe" },
+    ];
     const cohenOutDir = path.join(DIST_DIR, "cohen");
     fs.mkdirSync(cohenOutDir, { recursive: true });
+
+    for (const target of cohenTargets) {
+      const outPath = path.join(cohenOutDir, target.name);
+      try {
+        execSync(`go build -ldflags="-s -w" -trimpath -o "${outPath}" .`, {
+          cwd: COHEN_DIR,
+          env: { ...process.env, CGO_ENABLED: "0", GOOS: target.os, GOARCH: target.arch },
+          stdio: "inherit",
+        });
+        fs.chmodSync(outPath, 0o755);
+      } catch (err) {
+        log(`Cohen compile skipped for ${target.os}/${target.arch}: ${err.message}`);
+      }
+    }
+
+    const cohenBinaryName = isWindows ? "cohen.exe" : "cohen";
     const cohenOutPath = path.join(cohenOutDir, cohenBinaryName);
 
     try {
-      execSync(`go build -o "${cohenOutPath}" .`, {
+      execSync(`go build -ldflags="-s -w" -trimpath -o "${cohenOutPath}" .`, {
         cwd: COHEN_DIR,
         env: { ...process.env, CGO_ENABLED: "0" },
         stdio: "inherit",

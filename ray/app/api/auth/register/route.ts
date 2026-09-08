@@ -81,9 +81,12 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const proto = request.headers.get("x-forwarded-proto") || request.nextUrl.protocol;
+    const isHttps = proto.includes("https");
+
     response.cookies.set("ray_token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isHttps,
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",

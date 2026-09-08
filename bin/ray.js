@@ -86,24 +86,24 @@ function printBanner(rayPort = 4567, brainPort = 4500) {
 
   console.log(`\n${C.bold}${C.cyan}╭${border}╮${C.reset}`);
   printBoxLine("");
-  printBoxLine(`${C.bold}${C.green}✔ PutmeIn successfully installed and running!${C.reset} (v${version})`);
+  printBoxLine(`${C.bold}${C.green}[OK] PutmeIn successfully installed and running!${C.reset} (v${version})`);
   printBoxLine("");
   printBoxLine(`${C.bold}Web Dashboard (Ray):${C.reset}    ${C.cyan}http://localhost:${rayPort}${C.reset}`);
   printBoxLine(`${C.bold}Network Dashboard:${C.reset}      ${C.cyan}http://${lanIp}:${rayPort}${C.reset}`);
   printBoxLine(`${C.bold}AI Backend (Brain):${C.reset}     ${C.dim}http://localhost:${brainPort}${C.reset}`);
   printBoxLine("");
   printBoxLine(`${C.bold}Default Admin Login:${C.reset}`);
-  printBoxLine(`  • Email:    ${C.yellow}admin@putme.in${C.reset}`);
-  printBoxLine(`  • Password: ${C.yellow}admin123${C.reset}`);
+  printBoxLine(`  * Email:    ${C.yellow}admin@putme.in${C.reset}`);
+  printBoxLine(`  * Password: ${C.yellow}admin123${C.reset}`);
   printBoxLine("");
   printBoxLine(`${C.bold}Useful CLI Commands:${C.reset}`);
-  printBoxLine(`  • ${C.yellow}ray status${C.reset}        Inspect service health and memory`);
-  printBoxLine(`  • ${C.yellow}ray logs${C.reset}          Stream live combined logs`);
-  printBoxLine(`  • ${C.yellow}ray stop${C.reset}          Stop background services`);
-  printBoxLine(`  • ${C.yellow}ray restart${C.reset}       Restart services with fresh state`);
-  printBoxLine(`  • ${C.yellow}ray starter${C.reset}       Enable automatic startup on system boot`);
-  printBoxLine(`  • ${C.yellow}ray --no-startup${C.reset}  Disable automatic startup on boot`);
-  printBoxLine(`  • ${C.yellow}ray cohen${C.reset}         Launch interactive terminal TUI`);
+  printBoxLine(`  * ${C.yellow}ray status${C.reset}        Inspect service health and memory`);
+  printBoxLine(`  * ${C.yellow}ray logs${C.reset}          Stream live combined logs`);
+  printBoxLine(`  * ${C.yellow}ray stop${C.reset}          Stop background services`);
+  printBoxLine(`  * ${C.yellow}ray restart${C.reset}       Restart services with fresh state`);
+  printBoxLine(`  * ${C.yellow}ray starter${C.reset}       Enable automatic startup on system boot`);
+  printBoxLine(`  * ${C.yellow}ray --no-startup${C.reset}  Disable automatic startup on boot`);
+  printBoxLine(`  * ${C.yellow}ray cohen${C.reset}         Launch interactive terminal TUI`);
   printBoxLine("");
   console.log(`${C.bold}${C.cyan}╰${border}╯${C.reset}\n`);
 }

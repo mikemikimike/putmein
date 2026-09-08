@@ -1,5 +1,5 @@
 "use client"
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import LightPillar from './HeroBg';
 import { Copy, Check, Terminal } from 'lucide-react';
 
@@ -64,6 +64,15 @@ function CommandBlock() {
   const [os, setOs] = useState<'unix' | 'win'>('unix');
   const [copied, setCopied] = useState(false);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined' && navigator?.userAgent) {
+      const ua = navigator.userAgent.toLowerCase();
+      if (ua.includes('win')) {
+        setOs('win');
+      }
+    }
+  }, []);
+
   const command =
     os === 'unix'
       ? 'curl -fsSL https://putme.in/install.sh | bash'
@@ -80,7 +89,7 @@ function CommandBlock() {
   };
 
   return (
-    <div className="w-full max-w-[680px] mx-auto flex flex-col items-center gap-2.5">
+    <div className="w-full max-w-[720px] mx-auto flex flex-col items-center gap-2.5">
       {/* OS Tab Switcher */}
       <div className="flex items-center gap-1.5 p-1 bg-zinc-900/60 border border-white/10 rounded-lg text-xs font-mono select-none">
         <button
@@ -120,7 +129,7 @@ function CommandBlock() {
             </span>
           </div>
 
-          <code className="text-xs sm:text-sm md:text-[14px] lg:text-[15px] font-mono text-zinc-200 tracking-tight whitespace-nowrap select-all">
+          <code className="text-[12px] sm:text-[13.5px] md:text-[14.5px] font-mono text-zinc-200 tracking-tight whitespace-nowrap select-all flex-shrink-0">
             {command}
           </code>
         </div>

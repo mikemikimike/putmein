@@ -72,9 +72,12 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const proto = request.headers.get("x-forwarded-proto") || request.nextUrl.protocol;
+    const isHttps = proto.includes("https");
+
     response.cookies.set("ray_token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isHttps,
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",
@@ -84,6 +87,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error("Login route error:", error?.message || error);
     if (error?.stack) console.error(error.stack);
+    if (error?.cause) console.error("Error cause:", error.cause);
     return NextResponse.json(
       { error: error?.message || "An unexpected error occurred. Please try again." },
       { status: 500 }

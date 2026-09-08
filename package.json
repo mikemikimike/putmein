@@ -1,6 +1,6 @@
 {
   "name": "putmein-test",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Autonomous DevOps & Infrastructure Orchestrator powered by Ray and Brain",
   "main": "bin/ray.js",
   "bin": {

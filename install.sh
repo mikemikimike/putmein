@@ -180,6 +180,20 @@ esac
 
 success "Operating System: $OS ($ARCH)"
 
+if [ "$OS" = "Windows" ]; then
+  echo ""
+  warn "PutmeIn has a dedicated native Windows PowerShell installer!"
+  echo ""
+  info "Please open PowerShell or Windows Terminal and run:"
+  echo ""
+  echo -e "  ${BOLD}${CYAN}powershell -c \"irm https://putme.in/install.ps1 | iex\"${NC}"
+  echo ""
+  echo -e "  Or simply inside PowerShell:"
+  echo -e "  ${BOLD}${CYAN}irm https://putme.in/install.ps1 | iex${NC}"
+  echo ""
+  exit 0
+fi
+
 # ==============================================================================
 # Step 2: Check & Configure Docker Engine
 # ==============================================================================

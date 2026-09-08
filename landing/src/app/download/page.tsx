@@ -77,9 +77,9 @@ export default function DownloadPage() {
                 }
                 className="relative flex items-center justify-between gap-3 p-3.5 bg-black/60 border border-white/10 rounded-xl cursor-pointer hover:border-white/25 transition-all mb-4"
               >
-                <div className="flex items-center gap-2.5 overflow-hidden">
-                  <span className="text-zinc-500 font-mono text-xs select-none">$</span>
-                  <code className="text-xs sm:text-sm font-mono text-zinc-200 truncate select-all">
+                <div className="flex items-center gap-2.5 overflow-x-auto min-w-0">
+                  <span className="text-zinc-500 font-mono text-xs select-none flex-shrink-0">$</span>
+                  <code className="text-[11.5px] sm:text-[13px] font-mono text-zinc-200 whitespace-nowrap select-all flex-shrink-0">
                     curl -fsSL https://putme.in/install.sh | bash
                   </code>
                 </div>
@@ -154,9 +154,9 @@ export default function DownloadPage() {
                 }
                 className="relative flex items-center justify-between gap-3 p-3.5 bg-black/60 border border-white/10 rounded-xl cursor-pointer hover:border-white/25 transition-all mb-4"
               >
-                <div className="flex items-center gap-2.5 overflow-hidden">
-                  <span className="text-zinc-500 font-mono text-xs select-none">CMD / PS&gt;</span>
-                  <code className="text-xs sm:text-sm font-mono text-zinc-200 whitespace-nowrap truncate select-all">
+                <div className="flex items-center gap-2.5 overflow-x-auto min-w-0">
+                  <span className="text-zinc-500 font-mono text-xs select-none flex-shrink-0">CMD / PS&gt;</span>
+                  <code className="text-[11.5px] sm:text-[13px] font-mono text-zinc-200 whitespace-nowrap select-all flex-shrink-0">
                     powershell -c &quot;irm https://putme.in/install.ps1 | iex&quot;
                   </code>
                 </div>
