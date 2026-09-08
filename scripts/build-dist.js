@@ -25,7 +25,32 @@ function error(msg) {
 function copyDirRecursive(src, dest) {
   if (!fs.existsSync(src)) return;
   fs.mkdirSync(dest, { recursive: true });
-  fs.cpSync(src, dest, { recursive: true, dereference: false });
+  fs.cpSync(src, dest, { recursive: true, dereference: true });
+}
+
+function dereferenceAllSymlinks(dir) {
+  if (!fs.existsSync(dir)) return;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isSymbolicLink()) {
+      try {
+        const targetPath = fs.realpathSync(fullPath);
+        fs.unlinkSync(fullPath);
+        if (fs.statSync(targetPath).isDirectory()) {
+          copyDirRecursive(targetPath, fullPath);
+          log(`Dereferenced symlink dir: ${entry.name}`);
+        } else {
+          fs.copyFileSync(targetPath, fullPath);
+          log(`Dereferenced symlink file: ${entry.name}`);
+        }
+      } catch (err) {
+        log(`Warning: Failed to dereference symlink ${entry.name}: ${err.message}`);
+      }
+    } else if (entry.isDirectory()) {
+      dereferenceAllSymlinks(fullPath);
+    }
+  }
 }
 
 async function main() {
@@ -132,20 +157,36 @@ async function main() {
 
   copyDirRecursive(standaloneSource, distRay);
 
-  // Ensure full @prisma and .prisma runtime directories are staged
+  // Ensure full @prisma and .prisma runtime directories are staged in both node_modules and .next/node_modules
   const sourcePrisma = path.join(RAY_DIR, "node_modules", "@prisma");
   const destPrisma = path.join(distRay, "node_modules", "@prisma");
   if (fs.existsSync(sourcePrisma)) {
-    log("Ensuring complete @prisma runtime is staged...");
+    log("Ensuring complete @prisma runtime is staged in node_modules/@prisma...");
     copyDirRecursive(sourcePrisma, destPrisma);
+  }
+
+  const destPrismaNext = path.join(distRay, ".next", "node_modules", "@prisma");
+  if (fs.existsSync(sourcePrisma)) {
+    log("Ensuring complete @prisma runtime is staged in .next/node_modules/@prisma...");
+    copyDirRecursive(sourcePrisma, destPrismaNext);
   }
 
   const sourceDotPrisma = path.join(RAY_DIR, "node_modules", ".prisma");
   const destDotPrisma = path.join(distRay, "node_modules", ".prisma");
   if (fs.existsSync(sourceDotPrisma)) {
-    log("Ensuring complete .prisma client and query engines are staged...");
+    log("Ensuring complete .prisma client and query engines are staged in node_modules/.prisma...");
     copyDirRecursive(sourceDotPrisma, destDotPrisma);
   }
+
+  const destDotPrismaNext = path.join(distRay, ".next", "node_modules", ".prisma");
+  if (fs.existsSync(sourceDotPrisma)) {
+    log("Ensuring complete .prisma client and query engines are staged in .next/node_modules/.prisma...");
+    copyDirRecursive(sourceDotPrisma, destDotPrismaNext);
+  }
+
+  // Dereference ALL symlinks in distRay so packages are 100% self-contained on Linux and Windows
+  log("Dereferencing all symlinks in dist/ray...");
+  dereferenceAllSymlinks(distRay);
 
   // Ensure schema.prisma is staged for runtime migrations and prisma db push
   const sourcePrismaDir = path.join(RAY_DIR, "prisma");
