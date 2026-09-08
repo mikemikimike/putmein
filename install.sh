@@ -80,6 +80,55 @@ run_elevated() {
   fi
 }
 
+# APT Lock helper to handle Ubuntu unattended-upgrades automatically and swiftly
+wait_for_apt_lock() {
+  if ! command -v apt-get &>/dev/null; then
+    return 0
+  fi
+
+  export DEBIAN_FRONTEND=noninteractive
+
+  # Stop unattended-upgrades service so it doesn't contest the lock
+  systemctl stop unattended-upgrades.service 2>/dev/null || true
+
+  local lock_files=("/var/lib/dpkg/lock-frontend" "/var/lib/dpkg/lock" "/var/lib/apt/lists/lock")
+  local is_locked=false
+  for lf in "${lock_files[@]}"; do
+    if [ -f "$lf" ] && command -v fuser &>/dev/null && fuser "$lf" >/dev/null 2>&1; then
+      is_locked=true
+      break
+    fi
+  done
+
+  if [ "$is_locked" = true ]; then
+    info "Resolving system package manager background lock automatically..."
+    local waited=0
+    while true; do
+      local still_locked=false
+      for lf in "${lock_files[@]}"; do
+        if [ -f "$lf" ] && command -v fuser &>/dev/null && fuser "$lf" >/dev/null 2>&1; then
+          still_locked=true
+          break
+        fi
+      done
+      if [ "$still_locked" = false ]; then
+        break
+      fi
+      sleep 2
+      waited=$((waited + 2))
+      if [ "$waited" -ge 8 ]; then
+        # Force release lock cleanly
+        killall -9 unattended-upgr 2>/dev/null || true
+        killall apt apt-get 2>/dev/null || true
+        sleep 1
+        rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock 2>/dev/null || true
+        dpkg --configure -a 2>/dev/null || true
+        break
+      fi
+    done
+  fi
+}
+
 # Get Network IP
 get_lan_ip() {
   local ip=""
@@ -137,6 +186,7 @@ success "Operating System: $OS ($ARCH)"
 step "2/6" "Checking Container Runtime (Docker)..."
 
 install_docker_linux() {
+  wait_for_apt_lock
   info "Installing Docker Engine via official convenience script..."
   run_elevated sh -c "curl -fsSL https://get.docker.com | sh"
   if [ -n "$SUDO_USER" ]; then
@@ -196,10 +246,12 @@ step "3/6" "Checking Node.js & npm Environment..."
 
 install_node_linux() {
   info "Installing Node.js LTS (v20) and npm..."
+  wait_for_apt_lock
   if command -v apt-get &>/dev/null; then
     curl -fsSL https://deb.nodesource.com/setup_20.x | run_elevated bash -
-    run_elevated apt-get update -qq || true
-    run_elevated apt-get install -y -qq nodejs
+    wait_for_apt_lock
+    run_elevated apt-get -o DPkg::Lock::Timeout=60 update -qq || true
+    run_elevated apt-get -o DPkg::Lock::Timeout=60 install -y -qq nodejs
   elif command -v dnf &>/dev/null; then
     curl -fsSL https://rpm.nodesource.com/setup_20.x | run_elevated bash -
     run_elevated dnf install -y nodejs
@@ -213,22 +265,17 @@ install_node_linux() {
   fi
 }
 
-NEED_NODE=false
-if ! command -v node &>/dev/null; then
-  NEED_NODE=true
-else
+HAS_NODE=false
+if command -v node &>/dev/null; then
   NODE_MAJOR=$(node -v 2>/dev/null | cut -d'.' -f1 | tr -d 'v')
-  if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt 18 ]; then
+  if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -ge 18 ]; then
+    HAS_NODE=true
+  else
     warn "Node.js is installed but version ($NODE_MAJOR) is too old (requires >= 18)."
-    NEED_NODE=true
   fi
 fi
 
-if ! command -v npm &>/dev/null; then
-  NEED_NODE=true
-fi
-
-if [ "$NEED_NODE" = true ]; then
+if [ "$HAS_NODE" = false ]; then
   if [ "$OS" = "Linux" ]; then
     install_node_linux
   elif [ "$OS" = "macOS" ]; then
@@ -241,16 +288,23 @@ if [ "$NEED_NODE" = true ]; then
   fi
 fi
 
-# Fallback: On Debian/Ubuntu distros where nodejs and npm are packaged separately, ensure npm is installed
-if ! command -v npm &>/dev/null && [ "$OS" = "Linux" ]; then
-  info "npm package is missing. Installing npm via system package manager..."
-  if command -v apt-get &>/dev/null; then
-    run_elevated apt-get update -qq || true
-    run_elevated apt-get install -y -qq npm || true
-  elif command -v dnf &>/dev/null; then
-    run_elevated dnf install -y npm || true
-  elif command -v yum &>/dev/null; then
-    run_elevated yum install -y npm || true
+# If node is present but npm is missing (common on Ubuntu/Debian where packages are separate)
+if ! command -v npm &>/dev/null; then
+  info "npm package is missing. Installing npm..."
+  if [ "$OS" = "Linux" ]; then
+    if command -v apt-get &>/dev/null; then
+      wait_for_apt_lock
+      run_elevated apt-get -o DPkg::Lock::Timeout=60 update -qq || true
+      run_elevated apt-get -o DPkg::Lock::Timeout=60 install -y -qq npm || true
+    elif command -v dnf &>/dev/null; then
+      run_elevated dnf install -y npm || true
+    elif command -v yum &>/dev/null; then
+      run_elevated yum install -y npm || true
+    elif command -v pacman &>/dev/null; then
+      run_elevated pacman -Sy --noconfirm npm || true
+    elif command -v apk &>/dev/null; then
+      run_elevated apk add --no-cache npm || true
+    fi
   fi
 fi
 
