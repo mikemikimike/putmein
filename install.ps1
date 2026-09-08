@@ -41,15 +41,14 @@ function Test-DockerRunning {
     }
 }
 
-Clear-Host
 Write-Color "   ___       __                ____     " Cyan
 Write-Color "  / _ \__ __/ /_  __ _  ___   /  _/__   " Cyan
 Write-Color " / ___/ // / __/ /  ' \/ -_) _/ // _ \  " Cyan
 Write-Color "/_/   \_,_/\__/ /_/_/_/\__/ /___/_//_/  " Cyan
 Write-Host ""
 Write-Color "Autonomous DevOps, Infrastructure Monitoring & Deployment Engine" White
-Write-Color "Windows Installer • https://putme.in" DarkGray
-Write-Host "────────────────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
+Write-Color "Windows Installer - https://putme.in" DarkGray
+Write-Host "------------------------------------------------------------------------" -ForegroundColor DarkGray
 
 # ==============================================================================
 # Step 1: Detect Windows Environment
@@ -69,7 +68,6 @@ if ($hasDocker) {
         $dockerVer = (& docker --version 2>&1)
         Write-Success "Docker is running ($dockerVer)"
     } else {
-        # Check if Docker Desktop is installed
         $desktopPaths = @(
             "$env:ProgramFiles\Docker\Docker\Docker Desktop.exe",
             "${env:ProgramFiles(x86)}\Docker\Docker\Docker Desktop.exe",
@@ -141,7 +139,8 @@ if ($needNode) {
     if ($hasWinget) {
         Write-Color "  Installing Node.js LTS via winget..." Cyan
         winget install OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+        $env:Path = "$userPath;$env:Path"
         Write-Success "Node.js installed successfully!"
     } else {
         Write-ErrorMsg "Please install Node.js (LTS) from https://nodejs.org/"
@@ -175,6 +174,7 @@ if (!(Test-Path $configDir)) {
 $envFile = Join-Path $configDir ".env"
 $mysqlContainer = "putmein-mysql"
 $mysqlPort = "3306"
+$dbPassword = "root"
 
 if (Test-DockerRunning) {
     $existingContainers = @()
@@ -201,12 +201,6 @@ if (Test-DockerRunning) {
             Write-Success "Started existing MySQL container."
         }
     } else {
-        # Generate random password
-        $bytes = New-Object byte[] 16
-        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-        $rng.GetBytes($bytes)
-        $dbPassword = [BitConverter]::ToString($bytes).Replace("-", "").ToLower()
-
         Write-Color "  Creating dedicated MySQL container on port $mysqlPort..." Cyan
         & docker run -d `
             --name $mysqlContainer `
@@ -215,25 +209,7 @@ if (Test-DockerRunning) {
             -e "MYSQL_ROOT_PASSWORD=$dbPassword" `
             -e "MYSQL_DATABASE=putmein" `
             -v "putmein_mysql_data:/var/lib/mysql" `
-            mysql:8.0 2>$null | Out-Null
-
-        $secretBytes = New-Object byte[] 8
-        $rng.GetBytes($secretBytes)
-        $secret = [BitConverter]::ToString($secretBytes).Replace("-", "").ToLower()
-
-        $envContent = @"
-# PutmeIn Local Environment
-DATABASE_URL="mysql://root:${dbPassword}@127.0.0.1:${mysqlPort}/putmein"
-RAY_PORT=4567
-BRAIN_PORT=4500
-RAY_URL="http://localhost:4567"
-BRAIN_URL="http://localhost:4500"
-NEXT_PUBLIC_BRAIN_URL="http://localhost:4500"
-BRAIN_INTERNAL_SECRET="putmein-sec-$secret"
-AGENT_AUTONOMOUS="false"
-"@
-        Set-Content -Path $envFile -Value $envContent
-        Write-Success "Database configured and credentials saved to $envFile"
+            mysql:8.0 --default-authentication-plugin=mysql_native_password 2>$null | Out-Null
 
         # Wait for MySQL readiness
         Write-Host "  Waiting for database engine to accept connections..." -ForegroundColor Cyan -NoNewline
@@ -248,30 +224,23 @@ AGENT_AUTONOMOUS="false"
         Write-Host ""
         Write-Success "Database engine ready!"
     }
-} else {
-    Write-WarnMsg "Docker daemon is currently offline. Creating default environment configuration."
-    if (!(Test-Path $envFile)) {
-        $secretBytes = New-Object byte[] 8
-        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-        $rng.GetBytes($secretBytes)
-        $secret = [BitConverter]::ToString($secretBytes).Replace("-", "").ToLower()
+}
 
-        $envContent = @"
+# Create environment configuration if missing or update with safe URL
+if (!(Test-Path $envFile)) {
+    $envContent = @"
 # PutmeIn Local Environment
-DATABASE_URL="mysql://root:root@127.0.0.1:3306/putmein"
+DATABASE_URL="mysql://root:${dbPassword}@127.0.0.1:${mysqlPort}/putmein?allowPublicKeyRetrieval=true"
 RAY_PORT=4567
 BRAIN_PORT=4500
 RAY_URL="http://localhost:4567"
 BRAIN_URL="http://localhost:4500"
 NEXT_PUBLIC_BRAIN_URL="http://localhost:4500"
-BRAIN_INTERNAL_SECRET="putmein-sec-$secret"
+BRAIN_INTERNAL_SECRET="putmein-sec-2024"
 AGENT_AUTONOMOUS="false"
 "@
-        Set-Content -Path $envFile -Value $envContent
-    }
+    Set-Content -Path $envFile -Value $envContent
     Write-Success "Configuration saved to $envFile"
-    Write-WarnMsg "Once Docker Desktop is running, create your container by executing:"
-    Write-Color "    docker run -d --name putmein-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=putmein mysql:8.0" DarkYellow
 }
 
 # ==============================================================================
@@ -279,54 +248,24 @@ AGENT_AUTONOMOUS="false"
 # ==============================================================================
 Write-Step "6/6" "Installing PutmeIn Engine & Starting Services..."
 
-# Remove old shims from both NPM prefix and active Node directory (NVM Windows support)
-$cleanDirs = @()
-$npmPrefix = (npm config get prefix 2>$null)
-if ($npmPrefix) { $cleanDirs += $npmPrefix.Trim() }
-try {
-    $nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
-    if ($nodeExe) { $cleanDirs += (Split-Path $nodeExe) }
-} catch {}
-if ($env:APPDATA) { $cleanDirs += "$env:APPDATA\npm" }
-
-$binNames = @("ray", "ray.cmd", "ray.ps1", "putmein", "putmein.cmd", "putmein.ps1")
-foreach ($dir in ($cleanDirs | Select-Object -Unique)) {
-    if ($dir -and (Test-Path $dir)) {
-        foreach ($b in $binNames) {
-            $target = Join-Path $dir $b
-            if (Test-Path $target) {
-                Remove-Item -Path $target -Force -ErrorAction SilentlyContinue
-            }
-        }
-    }
-}
-
-Write-Color "  Installing putmein-test package from NPM..." Cyan
+Write-Color "  Installing PutmeIn package from NPM..." Cyan
 npm install -g putmein-test@latest --force
 
 # Refresh environment PATH for current session
-$machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
-$userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
-$env:Path = "$userPath;$machinePath"
-foreach ($dir in ($cleanDirs | Select-Object -Unique)) {
-    if ($dir -and ($env:Path -notlike "*$dir*")) {
-        $env:Path = "$dir;$env:Path"
+$npmPrefix = (npm config get prefix 2>$null)
+if ($npmPrefix) {
+    $prefix = $npmPrefix.Trim()
+    if ($env:Path -notlike "*$prefix*") {
+        $env:Path = "$prefix;$env:Path"
     }
 }
+if ($env:APPDATA -and (Test-Path "$env:APPDATA\npm") -and ($env:Path -notlike "*$env:APPDATA\npm*")) {
+    $env:Path = "$env:APPDATA\npm;$env:Path"
+}
 
-# If MySQL is running, initialize tables directly via SQL script (Zero external dependencies)
+# If MySQL is running, initialize tables directly via SQL script
 if (Test-DockerRunning) {
     try {
-        $envFilePath = Join-Path $env:USERPROFILE ".putmein\.env"
-        $dbPass = "root"
-        if (Test-Path $envFilePath) {
-            $envLines = Get-Content $envFilePath
-            foreach ($line in $envLines) {
-                if ($line -match '^DATABASE_URL="?mysql://root:([^@]+)@') {
-                    $dbPass = $matches[1]
-                }
-            }
-        }
         $globalNpm = (npm root -g 2>$null)
         $sqlScriptPath = ""
         if ($globalNpm) {
@@ -339,7 +278,8 @@ if (Test-DockerRunning) {
         }
         if ($sqlScriptPath -and (Test-Path $sqlScriptPath)) {
             Write-Color "  Initializing database schema and default admin..." Cyan
-            Get-Content $sqlScriptPath | docker exec -i putmein-mysql mysql -uroot -p"$dbPass" putmein 2>$null
+            Get-Content $sqlScriptPath | docker exec -i putmein-mysql mysql -uroot -p"$dbPassword" putmein 2>$null
+            & docker exec -i putmein-mysql mysql -uroot -p"$dbPassword" -e "ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY '$dbPassword'; FLUSH PRIVILEGES;" 2>$null
             Write-Success "Database schema verified and admin user ready!"
         }
     } catch {}

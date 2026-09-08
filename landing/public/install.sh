@@ -378,12 +378,12 @@ else
     -e "MYSQL_ROOT_PASSWORD=${DB_PASSWORD}" \
     -e "MYSQL_DATABASE=putmein" \
     -v "putmein_mysql_data:/var/lib/mysql" \
-    mysql:8.0 >/dev/null
+    mysql:8.0 --default-authentication-plugin=mysql_native_password >/dev/null
 
   # Generate environment file
   cat > "$PUTMEIN_ENV_FILE" << EOF
 # PutmeIn Local Environment
-DATABASE_URL="mysql://root:${DB_PASSWORD}@127.0.0.1:${MYSQL_PORT}/putmein"
+DATABASE_URL="mysql://root:${DB_PASSWORD}@127.0.0.1:${MYSQL_PORT}/putmein?allowPublicKeyRetrieval=true"
 RAY_PORT=4567
 BRAIN_PORT=4500
 RAY_URL="http://localhost:4567"
@@ -408,10 +408,22 @@ EOF
   success "Database engine ready!"
 fi
 
-# Ensure database password is known
-if [ -z "$DB_PASSWORD" ] && [ -f "$PUTMEIN_ENV_FILE" ]; then
-  DB_PASSWORD=$(grep "^DATABASE_URL=" "$PUTMEIN_ENV_FILE" 2>/dev/null | sed -E 's/.*:([^@]+)@.*/\1/' || true)
+# Ensure database password is known and allowPublicKeyRetrieval is configured
+if [ -f "$PUTMEIN_ENV_FILE" ]; then
+  if [ -z "$DB_PASSWORD" ]; then
+    DB_PASSWORD=$(grep "^DATABASE_URL=" "$PUTMEIN_ENV_FILE" 2>/dev/null | sed -E 's/.*:([^@]+)@.*/\1/' || true)
+  fi
+  if ! grep -q "allowPublicKeyRetrieval" "$PUTMEIN_ENV_FILE"; then
+    sed -i.bak -E 's/(DATABASE_URL="mysql:\/\/[^"?]+)(\?.*)?"/\1\?allowPublicKeyRetrieval=true"/' "$PUTMEIN_ENV_FILE" 2>/dev/null || true
+  fi
 fi
+
+# Ensure root user in MySQL container accepts native password for reliable adapter connectivity
+docker exec -i "$MYSQL_CONTAINER" mysql -uroot -p"${DB_PASSWORD}" << EOSQL 2>/dev/null || true
+ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY '${DB_PASSWORD}';
+ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${DB_PASSWORD}';
+FLUSH PRIVILEGES;
+EOSQL
 
 # Initialize database schema directly inside MySQL container (Zero external dependencies)
 info "Initializing database tables and default admin account..."

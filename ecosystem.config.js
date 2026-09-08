@@ -29,9 +29,13 @@ for (const envPath of envCandidates) {
   }
 }
 
-// Ensure DATABASE_URL is never undefined
+// Ensure DATABASE_URL is never undefined and configured for MySQL 8.0
 if (!userEnv.DATABASE_URL) {
   userEnv.DATABASE_URL = process.env.DATABASE_URL || "mysql://root:root@127.0.0.1:3306/putmein";
+}
+userEnv.DATABASE_URL = userEnv.DATABASE_URL.replace("@localhost:", "@127.0.0.1:");
+if (!userEnv.DATABASE_URL.includes("allowPublicKeyRetrieval")) {
+  userEnv.DATABASE_URL += (userEnv.DATABASE_URL.includes("?") ? "&" : "?") + "allowPublicKeyRetrieval=true";
 }
 
 // Ensure JWT_SECRET is never undefined

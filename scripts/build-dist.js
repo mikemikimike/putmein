@@ -252,7 +252,12 @@ async function main() {
     }
   }
   if (!process.env.DATABASE_URL) {
-    process.env.DATABASE_URL = "mysql://root:root@127.0.0.1:3306/putmein";
+    process.env.DATABASE_URL = "mysql://root:root@127.0.0.1:3306/putmein?allowPublicKeyRetrieval=true";
+  } else {
+    process.env.DATABASE_URL = process.env.DATABASE_URL.replace("@localhost:", "@127.0.0.1:");
+    if (!process.env.DATABASE_URL.includes("allowPublicKeyRetrieval")) {
+      process.env.DATABASE_URL += (process.env.DATABASE_URL.includes("?") ? "&" : "?") + "allowPublicKeyRetrieval=true";
+    }
   }
   if (!process.env.JWT_SECRET) {
     process.env.JWT_SECRET = "putmein-jwt-secret-default-key-2024";
