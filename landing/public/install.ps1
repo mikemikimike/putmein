@@ -196,8 +196,8 @@ AGENT_AUTONOMOUS="false"
 # Step 6: Install PutmeIn Global Package & Launch
 # ==============================================================================
 Write-Step "6/6" "Installing PutmeIn Engine & Starting Services..."
-Write-Color "  Installing putmein package from NPM..." Cyan
-npm install -g putmein
+Write-Color "  Installing putmein-test package from NPM..." Cyan
+npm install -g putmein-test
 
 # Start services via ray CLI
 Write-Color "  Starting PutmeIn services..." Cyan

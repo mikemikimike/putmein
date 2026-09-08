@@ -330,18 +330,18 @@ fi
 # ==============================================================================
 step "6/6" "Installing PutmeIn Engine & Starting Services..."
 
-info "Installing 'putmein' package from NPM..."
-if npm install -g putmein 2>/dev/null; then
+info "Installing 'putmein-test' package from NPM..."
+if npm install -g putmein-test 2>/dev/null; then
   success "PutmeIn CLI installed globally!"
 else
-  info "Attempting global install with elevated privileges..."
-  run_elevated npm install -g putmein
+  warn "Permission denied installing globally. Attempting with elevated privileges..."
+  run_elevated npm install -g putmein-test
   success "PutmeIn CLI installed successfully!"
 fi
 
 # Apply initial database tables via Prisma inside installed putmein package
 GLOBAL_NPM_ROOT=$(npm root -g)
-PUTMEIN_PKG_DIR="$GLOBAL_NPM_ROOT/putmein"
+PUTMEIN_PKG_DIR="$GLOBAL_NPM_ROOT/putmein-test"
 
 if [ -d "$PUTMEIN_PKG_DIR/dist/ray" ]; then
   info "Synchronizing database schema..."

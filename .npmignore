@@ -14,9 +14,24 @@ skills-lock.json
 install.sh
 install.ps1
 
-# Secrets and local runtime states
+# Secrets and local runtime states (global wildcard)
 .env
 .env*
+*.env
+*.env*
+**/.env
+**/.env*
+**/*.env*
 *.log
 *.pem
 .DS_Store
+
+# Prevent raw source code or configs from ever being packed inside dist/
+dist/**/src/
+dist/**/app/
+dist/**/prisma/
+dist/**/scripts/
+dist/**/*.ts
+dist/**/*.tsx
+dist/**/*.map
+dist/**/tsconfig*.json

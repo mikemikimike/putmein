@@ -129,7 +129,57 @@ async function main() {
     copyDirRecursive(rayPublic, destPublic);
   }
 
-  success("Ray Next.js standalone assets staged in dist/ray!");
+  // 6. Security & Cleanliness Sanitization: Purge ALL secrets, .env files, and raw source code from dist/
+  log("Sanitizing dist: removing all .env files and raw source code...");
+  const forbiddenFiles = [
+    ".env",
+    ".env.local",
+    ".env.production",
+    ".env.development",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "tsconfig.json",
+    "tsconfig.tsbuildinfo",
+    "eslint.config.mjs",
+    "postcss.config.mjs",
+    "prisma.config.ts",
+    "proxy.ts",
+    "package-lock.json",
+  ];
+
+  const forbiddenDirs = [
+    "src",
+    "app",
+    "scripts",
+    "prisma",
+  ];
+
+  for (const f of forbiddenFiles) {
+    const p = path.join(distRay, f);
+    if (fs.existsSync(p)) {
+      fs.rmSync(p, { force: true });
+    }
+  }
+
+  for (const d of forbiddenDirs) {
+    const p = path.join(distRay, d);
+    if (fs.existsSync(p)) {
+      fs.rmSync(p, { recursive: true, force: true });
+    }
+  }
+
+  // Safety Assertion: ensure zero .env files anywhere in dist
+  try {
+    const envMatches = execSync('find dist -name "*.env*" 2>/dev/null', { encoding: "utf-8" }).trim();
+    if (envMatches) {
+      error("CRITICAL SECURITY ERROR: .env files found in dist directory:\n" + envMatches);
+      process.exit(1);
+    }
+  } catch (_) {}
+
+  success("Sanitization complete: zero .env files or raw source code in dist!");
+  success("Ray Next.js standalone assets staged cleanly in dist/ray!");
   success("Full PutmeIn distribution build completed successfully!");
 }
 
