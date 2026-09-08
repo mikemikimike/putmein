@@ -73,28 +73,40 @@ function waitForPort(port, timeoutMs = 15000) {
   });
 }
 
+function printBoxLine(content, width = 74) {
+  // Strip ANSI color sequences to calculate visible length
+  const stripped = content.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
+  const pad = Math.max(0, width - stripped.length - 4);
+  console.log(`${C.bold}${C.cyan}│${C.reset}  ${content}${" ".repeat(pad)}${C.bold}${C.cyan}│${C.reset}`);
+}
+
 function printBanner(rayPort = 4567, brainPort = 4500) {
   const lanIp = getLanIp();
-  console.log(`
-${C.bold}${C.cyan}╭────────────────────────────────────────────────────────────────────────╮${C.reset}
-${C.bold}${C.cyan}│${C.reset}                                                                        ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}│${C.reset}   ${C.bold}${C.green}✨ PutmeIn is running in the background!${C.reset} (v${version})               ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}│${C.reset}                                                                        ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}│${C.reset}   ${C.bold}Local Dashboard:${C.reset}   ${C.cyan}http://localhost:${rayPort}${C.reset}                             ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}│${C.reset}   ${C.bold}Network Dashboard:${C.reset} ${C.cyan}http://${lanIp}:${rayPort}${C.reset}                        ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}│${C.reset}   ${C.bold}Brain API Engine:${C.reset}  ${C.dim}http://localhost:${brainPort}${C.reset}                             ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}│${C.reset}                                                                        ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}│${C.reset}   ${C.bold}Management Commands:${C.reset}                                                 ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}│${C.reset}     • ${C.yellow}ray status${C.reset}        View process status and memory               ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}│${C.reset}     • ${C.yellow}ray logs${C.reset}          Stream live combined logs                    ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}│${C.reset}     • ${C.yellow}ray stop${C.reset}          Stop background services                     ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}│${C.reset}     • ${C.yellow}ray restart${C.reset}       Restart services with fresh state            ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}│${C.reset}     • ${C.yellow}ray starter${C.reset}       Enable automatic startup on system boot      ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}│${C.reset}     • ${C.yellow}ray --no-startup${C.reset}  Disable automatic startup on boot            ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}│${C.reset}     • ${C.yellow}ray cohen${C.reset}         Launch interactive terminal TUI              ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}│${C.reset}                                                                        ${C.bold}${C.cyan}│${C.reset}
-${C.bold}${C.cyan}╰────────────────────────────────────────────────────────────────────────╯${C.reset}
-`);
+  const width = 74;
+  const border = "─".repeat(width - 2);
+
+  console.log(`\n${C.bold}${C.cyan}╭${border}╮${C.reset}`);
+  printBoxLine("");
+  printBoxLine(`${C.bold}${C.green}✨ PutmeIn is running in the background!${C.reset} (v${version})`);
+  printBoxLine("");
+  printBoxLine(`${C.bold}Web Dashboard (Ray):${C.reset}    ${C.cyan}http://localhost:${rayPort}${C.reset}`);
+  printBoxLine(`${C.bold}Network Dashboard:${C.reset}      ${C.cyan}http://${lanIp}:${rayPort}${C.reset}`);
+  printBoxLine(`${C.bold}AI Backend (Brain):${C.reset}     ${C.dim}http://localhost:${brainPort}${C.reset}`);
+  printBoxLine("");
+  printBoxLine(`${C.bold}Default Admin Login:${C.reset}`);
+  printBoxLine(`  • Email:    ${C.yellow}admin@putme.in${C.reset}`);
+  printBoxLine(`  • Password: ${C.yellow}admin123${C.reset}`);
+  printBoxLine("");
+  printBoxLine(`${C.bold}Useful CLI Commands:${C.reset}`);
+  printBoxLine(`  • ${C.yellow}ray status${C.reset}        Inspect service health and memory`);
+  printBoxLine(`  • ${C.yellow}ray logs${C.reset}          Stream live combined logs`);
+  printBoxLine(`  • ${C.yellow}ray stop${C.reset}          Stop background services`);
+  printBoxLine(`  • ${C.yellow}ray restart${C.reset}       Restart services with fresh state`);
+  printBoxLine(`  • ${C.yellow}ray starter${C.reset}       Enable automatic startup on system boot`);
+  printBoxLine(`  • ${C.yellow}ray --no-startup${C.reset}  Disable automatic startup on boot`);
+  printBoxLine(`  • ${C.yellow}ray cohen${C.reset}         Launch interactive terminal TUI`);
+  printBoxLine("");
+  console.log(`${C.bold}${C.cyan}╰${border}╯${C.reset}\n`);
 }
 
 function handleStart() {
@@ -107,6 +119,9 @@ function handleStart() {
 
   console.log(`${C.cyan}➜ Starting PutmeIn services (Ray & Brain) with PM2...${C.reset}`);
   try {
+    try {
+      execSync(`${pm2} delete putmein-ray putmein-brain`, { stdio: "ignore" });
+    } catch (_) {}
     execSync(`${pm2} start "${ECOSYSTEM_PATH}"`, { stdio: "inherit" });
     execSync(`${pm2} save`, { stdio: "ignore" });
     printBanner();
@@ -133,12 +148,16 @@ function handleRestart() {
   if (!pm2) return;
   console.log(`${C.cyan}➜ Restarting PutmeIn services...${C.reset}`);
   try {
-    execSync(`${pm2} restart putmein-ray putmein-brain`, { stdio: "inherit" });
+    try {
+      execSync(`${pm2} delete putmein-ray putmein-brain`, { stdio: "ignore" });
+    } catch (_) {}
+    execSync(`${pm2} start "${ECOSYSTEM_PATH}"`, { stdio: "inherit" });
+    execSync(`${pm2} save`, { stdio: "ignore" });
     console.log(`${C.green}✔ PutmeIn services restarted successfully.${C.reset}`);
     printBanner();
   } catch (err) {
-    console.log(`${C.yellow}Starting fresh instance...${C.reset}`);
-    handleStart();
+    console.error(`${C.red}[ERROR]${C.reset} Failed to restart services: ${err.message}`);
+    process.exit(1);
   }
 }
 

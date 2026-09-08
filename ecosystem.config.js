@@ -38,14 +38,23 @@ if (Object.keys(userEnv).length === 0 && fs.existsSync(rootEnvPath)) {
 // Resolve paths for Brain binary
 const isWindows = process.platform === "win32";
 const brainBinaryName = isWindows ? "brain.exe" : "brain";
+const archMap = { x64: "x64", arm64: "arm64" };
+const normArch = archMap[process.arch] || process.arch;
 
 const candidateBrainPaths = [
+  path.join(__dirname, "dist", "brain", `brain-${process.platform}-${normArch}${isWindows ? ".exe" : ""}`),
   path.join(__dirname, "dist", "brain", brainBinaryName),
   path.join(__dirname, "brain", "bin", brainBinaryName),
   path.join(__dirname, "bin", brainBinaryName),
 ];
 
-const brainScript = candidateBrainPaths.find((p) => fs.existsSync(p)) || candidateBrainPaths[0];
+const brainScript = candidateBrainPaths.find((p) => fs.existsSync(p)) || candidateBrainPaths[1];
+
+if (fs.existsSync(brainScript) && !isWindows) {
+  try {
+    fs.chmodSync(brainScript, 0o755);
+  } catch (_) {}
+}
 
 // Resolve paths for Ray Next.js standalone server
 const candidateRayPaths = [

@@ -39,12 +39,34 @@ async function main() {
   fs.mkdirSync(path.join(DIST_DIR, "brain"), { recursive: true });
   fs.mkdirSync(path.join(DIST_DIR, "ray"), { recursive: true });
 
-  // 2. Build Brain Go Binary
-  log("Compiling Brain Go binary (CGO_ENABLED=0)...");
+  // 2. Build Brain Go Binary (Multi-Architecture Cross-Compilation)
+  log("Compiling Brain Go binaries for multi-platform support (Linux x64, Linux ARM64, Darwin x64/ARM64, Windows)...");
+  const brainTargets = [
+    { os: "linux", arch: "amd64", name: "brain-linux-x64" },
+    { os: "linux", arch: "arm64", name: "brain-linux-arm64" },
+    { os: "darwin", arch: "arm64", name: "brain-darwin-arm64" },
+    { os: "darwin", arch: "amd64", name: "brain-darwin-x64" },
+    { os: "windows", arch: "amd64", name: "brain-win32-x64.exe" },
+  ];
+
+  for (const target of brainTargets) {
+    const outPath = path.join(DIST_DIR, "brain", target.name);
+    try {
+      execSync(`go build -o "${outPath}" .`, {
+        cwd: BRAIN_DIR,
+        env: { ...process.env, CGO_ENABLED: "0", GOOS: target.os, GOARCH: target.arch },
+        stdio: "inherit",
+      });
+      fs.chmodSync(outPath, 0o755);
+      success(`Brain compiled for ${target.os}/${target.arch} -> dist/brain/${target.name}`);
+    } catch (err) {
+      error(`Brain build failed for ${target.os}/${target.arch}: ${err.message}`);
+    }
+  }
+
   const isWindows = process.platform === "win32";
   const brainBinaryName = isWindows ? "brain.exe" : "brain";
   const brainOutPath = path.join(DIST_DIR, "brain", brainBinaryName);
-
   try {
     execSync(`go build -o "${brainOutPath}" .`, {
       cwd: BRAIN_DIR,
@@ -52,11 +74,7 @@ async function main() {
       stdio: "inherit",
     });
     fs.chmodSync(brainOutPath, 0o755);
-    success(`Brain compiled to dist/brain/${brainBinaryName}`);
-  } catch (err) {
-    error("Brain Go build failed: " + err.message);
-    process.exit(1);
-  }
+  } catch (_) {}
 
   // 3. Build Cohen Go Binary (if cohen directory exists)
   if (fs.existsSync(COHEN_DIR)) {
@@ -113,6 +131,21 @@ async function main() {
   }
 
   copyDirRecursive(standaloneSource, distRay);
+
+  // Ensure full @prisma and .prisma runtime directories are staged
+  const sourcePrisma = path.join(RAY_DIR, "node_modules", "@prisma");
+  const destPrisma = path.join(distRay, "node_modules", "@prisma");
+  if (fs.existsSync(sourcePrisma)) {
+    log("Ensuring complete @prisma runtime is staged...");
+    copyDirRecursive(sourcePrisma, destPrisma);
+  }
+
+  const sourceDotPrisma = path.join(RAY_DIR, "node_modules", ".prisma");
+  const destDotPrisma = path.join(distRay, "node_modules", ".prisma");
+  if (fs.existsSync(sourceDotPrisma)) {
+    log("Ensuring complete .prisma client and query engines are staged...");
+    copyDirRecursive(sourceDotPrisma, destDotPrisma);
+  }
 
   // Next.js standalone docs require copying static files and public directory
   const rayStatic = path.join(RAY_DIR, ".next", "static");

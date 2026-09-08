@@ -445,29 +445,47 @@ ray start || true
 # Register autostart on system boot
 ray starter 2>/dev/null || true
 
+# Helper for perfectly aligned box borders
+print_box_line() {
+  local content="$1"
+  local width=72
+  local visible
+  visible=$(echo -e "$content" | sed -r "s/\x1B\[[0-9;]*[a-zA-Z]//g")
+  local len=${#visible}
+  local pad=$((width - len - 4))
+  if [ $pad -lt 0 ]; then pad=0; fi
+  printf "${BOLD}${CYAN}│${NC}  %b%*s${BOLD}${CYAN}│${NC}\n" "$content" "$pad" ""
+}
+
 # ==============================================================================
 # Finish: Display Completion Box
 # ==============================================================================
 LAN_IP=$(get_lan_ip)
 RAY_PORT="4567"
 BRAIN_PORT="4500"
+BOX_WIDTH=72
+BOX_BORDER=$(printf "%${BOX_WIDTH}s" "" | tr " " "─")
 
 echo ""
-echo -e "${BOLD}${CYAN}╭────────────────────────────────────────────────────────────────────────╮${NC}"
-echo -e "${BOLD}${CYAN}│${NC}                                                                        ${BOLD}${CYAN}│${NC}"
-echo -e "${BOLD}${CYAN}│${NC}   ${BOLD}${GREEN}🎉 PutmeIn successfully installed and running!${NC}                       ${BOLD}${CYAN}│${NC}"
-echo -e "${BOLD}${CYAN}│${NC}                                                                        ${BOLD}${CYAN}│${NC}"
-echo -e "${BOLD}${CYAN}│${NC}   ${BOLD}Web Dashboard (Ray):${NC}    ${CYAN}http://localhost:${RAY_PORT}${NC}                         ${BOLD}${CYAN}│${NC}"
-echo -e "${BOLD}${CYAN}│${NC}   ${BOLD}Network Dashboard:${NC}      ${CYAN}http://${LAN_IP}:${RAY_PORT}${NC}                    ${BOLD}${CYAN}│${NC}"
-echo -e "${BOLD}${CYAN}│${NC}   ${BOLD}AI Backend (Brain):${NC}     ${DIM}http://localhost:${BRAIN_PORT}${NC}                         ${BOLD}${CYAN}│${NC}"
-echo -e "${BOLD}${CYAN}│${NC}                                                                        ${BOLD}${CYAN}│${NC}"
-echo -e "${BOLD}${CYAN}│${NC}   ${BOLD}Useful CLI Commands:${NC}                                                 ${BOLD}${CYAN}│${NC}"
-echo -e "${BOLD}${CYAN}│${NC}     • ${YELLOW}ray status${NC}         Inspect service health and memory            ${BOLD}${CYAN}│${NC}"
-echo -e "${BOLD}${CYAN}│${NC}     • ${YELLOW}ray logs${NC}           Stream real-time unified logs                ${BOLD}${CYAN}│${NC}"
-echo -e "${BOLD}${CYAN}│${NC}     • ${YELLOW}ray stop${NC}           Stop running background services             ${BOLD}${CYAN}│${NC}"
-echo -e "${BOLD}${CYAN}│${NC}     • ${YELLOW}ray restart${NC}        Restart background services                  ${BOLD}${CYAN}│${NC}"
-echo -e "${BOLD}${CYAN}│${NC}     • ${YELLOW}ray cohen${NC}          Launch the interactive terminal TUI          ${BOLD}${CYAN}│${NC}"
-echo -e "${BOLD}${CYAN}│${NC}     • ${YELLOW}ray --no-startup${NC}   Disable launching on system boot             ${BOLD}${CYAN}│${NC}"
-echo -e "${BOLD}${CYAN}│${NC}                                                                        ${BOLD}${CYAN}│${NC}"
-echo -e "${BOLD}${CYAN}╰────────────────────────────────────────────────────────────────────────╯${NC}"
+echo -e "${BOLD}${CYAN}╭${BOX_BORDER}╮${NC}"
+print_box_line ""
+print_box_line "${BOLD}${GREEN}✔ PutmeIn successfully installed and running!${NC}"
+print_box_line ""
+print_box_line "${BOLD}Web Dashboard (Ray):${NC}    ${CYAN}http://localhost:${RAY_PORT}${NC}"
+print_box_line "${BOLD}Network Dashboard:${NC}      ${CYAN}http://${LAN_IP}:${RAY_PORT}${NC}"
+print_box_line "${BOLD}AI Backend (Brain):${NC}     ${DIM}http://localhost:${BRAIN_PORT}${NC}"
+print_box_line ""
+print_box_line "${BOLD}Default Admin Login:${NC}"
+print_box_line "  • Email:    ${YELLOW}admin@putme.in${NC}"
+print_box_line "  • Password: ${YELLOW}admin123${NC}"
+print_box_line ""
+print_box_line "${BOLD}Useful CLI Commands:${NC}"
+print_box_line "  • ${YELLOW}ray status${NC}         Inspect service health and memory"
+print_box_line "  • ${YELLOW}ray logs${NC}           Stream real-time unified logs"
+print_box_line "  • ${YELLOW}ray stop${NC}           Stop running background services"
+print_box_line "  • ${YELLOW}ray restart${NC}        Restart background services"
+print_box_line "  • ${YELLOW}ray cohen${NC}          Launch interactive terminal TUI"
+print_box_line "  • ${YELLOW}ray --no-startup${NC}   Disable launching on system boot"
+print_box_line ""
+echo -e "${BOLD}${CYAN}╰${BOX_BORDER}╯${NC}"
 echo ""

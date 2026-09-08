@@ -212,6 +212,10 @@ Write-Host "│                                                                 
 Write-Host "│   Web Dashboard (Ray):    http://localhost:4567                         │" -ForegroundColor White
 Write-Host "│   AI Backend (Brain):     http://localhost:4500                         │" -ForegroundColor DarkGray
 Write-Host "│                                                                        │" -ForegroundColor Cyan
+Write-Host "│   Default Admin Login:                                                 │" -ForegroundColor White
+Write-Host "│     • Email:    admin@putme.in                                         │" -ForegroundColor Yellow
+Write-Host "│     • Password: admin123                                               │" -ForegroundColor Yellow
+Write-Host "│                                                                        │" -ForegroundColor Cyan
 Write-Host "│   Useful CLI Commands:                                                 │" -ForegroundColor White
 Write-Host "│     • ray status         Inspect service health and memory            │" -ForegroundColor Yellow
 Write-Host "│     • ray logs           Stream real-time unified logs                │" -ForegroundColor Yellow
