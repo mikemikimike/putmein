@@ -73,21 +73,20 @@ function waitForPort(port, timeoutMs = 15000) {
   });
 }
 
-function printBoxLine(content, width = 74) {
+function printBoxLine(content, innerWidth = 66) {
   // Strip ANSI color sequences to calculate visible length
   const stripped = content.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
-  const pad = Math.max(0, width - stripped.length - 4);
-  console.log(`${C.bold}${C.cyan}│${C.reset}  ${content}${" ".repeat(pad)}${C.bold}${C.cyan}│${C.reset}`);
+  const pad = Math.max(0, innerWidth - stripped.length);
+  console.log(`${C.bold}${C.cyan}│${C.reset}  ${content}${" ".repeat(pad)}  ${C.bold}${C.cyan}│${C.reset}`);
 }
 
 function printBanner(rayPort = 4567, brainPort = 4500) {
   const lanIp = getLanIp();
-  const width = 74;
-  const border = "─".repeat(width - 2);
+  const border = "─".repeat(70);
 
   console.log(`\n${C.bold}${C.cyan}╭${border}╮${C.reset}`);
   printBoxLine("");
-  printBoxLine(`${C.bold}${C.green}✨ PutmeIn is running in the background!${C.reset} (v${version})`);
+  printBoxLine(`${C.bold}${C.green}✔ PutmeIn successfully installed and running!${C.reset} (v${version})`);
   printBoxLine("");
   printBoxLine(`${C.bold}Web Dashboard (Ray):${C.reset}    ${C.cyan}http://localhost:${rayPort}${C.reset}`);
   printBoxLine(`${C.bold}Network Dashboard:${C.reset}      ${C.cyan}http://${lanIp}:${rayPort}${C.reset}`);
@@ -126,8 +125,17 @@ function handleStart() {
     execSync(`${pm2} save`, { stdio: "ignore" });
     printBanner();
   } catch (err) {
-    console.error(`${C.red}[ERROR]${C.reset} Failed to start services: ${err.message}`);
-    process.exit(1);
+    // Attempt recovery from corrupted PM2 daemon
+    try {
+      console.log(`${C.yellow}Refreshing PM2 daemon state...${C.reset}`);
+      execSync(`${pm2} kill`, { stdio: "ignore" });
+      execSync(`${pm2} start "${ECOSYSTEM_PATH}"`, { stdio: "inherit" });
+      execSync(`${pm2} save`, { stdio: "ignore" });
+      printBanner();
+    } catch (retryErr) {
+      console.error(`${C.red}[ERROR]${C.reset} Failed to start services: ${retryErr.message}`);
+      process.exit(1);
+    }
   }
 }
 
@@ -156,8 +164,18 @@ function handleRestart() {
     console.log(`${C.green}✔ PutmeIn services restarted successfully.${C.reset}`);
     printBanner();
   } catch (err) {
-    console.error(`${C.red}[ERROR]${C.reset} Failed to restart services: ${err.message}`);
-    process.exit(1);
+    // Attempt recovery from corrupted PM2 daemon
+    try {
+      console.log(`${C.yellow}Refreshing PM2 daemon state...${C.reset}`);
+      execSync(`${pm2} kill`, { stdio: "ignore" });
+      execSync(`${pm2} start "${ECOSYSTEM_PATH}"`, { stdio: "inherit" });
+      execSync(`${pm2} save`, { stdio: "ignore" });
+      console.log(`${C.green}✔ PutmeIn services restarted successfully.${C.reset}`);
+      printBanner();
+    } catch (retryErr) {
+      console.error(`${C.red}[ERROR]${C.reset} Failed to restart services: ${retryErr.message}`);
+      process.exit(1);
+    }
   }
 }
 

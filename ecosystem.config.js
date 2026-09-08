@@ -75,6 +75,8 @@ module.exports = {
       name: "putmein-brain",
       script: brainScript,
       cwd: path.dirname(brainScript),
+      interpreter: "none",
+      exec_mode: "fork",
       autorestart: true,
       max_restarts: 10,
       restart_delay: 2000,

@@ -438,6 +438,12 @@ if [ -d "$PUTMEIN_PKG_DIR/dist/ray" ]; then
   success "Database schema synchronized!"
 fi
 
+# Reset PM2 daemon to guarantee clean process table
+pm2 kill 2>/dev/null || true
+if command -v fuser &>/dev/null; then
+  fuser -k 4567/tcp 4500/tcp 2>/dev/null || true
+fi
+
 # Start services via the ray CLI
 info "Starting PutmeIn background services..."
 ray start || true
@@ -448,13 +454,12 @@ ray starter 2>/dev/null || true
 # Helper for perfectly aligned box borders
 print_box_line() {
   local content="$1"
-  local width=72
   local visible
-  visible=$(echo -e "$content" | sed -r "s/\x1B\[[0-9;]*[a-zA-Z]//g")
+  visible=$(echo -e "$content" | sed -E "s/\x1B\[[0-9;]*[a-zA-Z]//g")
   local len=${#visible}
-  local pad=$((width - len - 4))
+  local pad=$(( 66 - len ))
   if [ $pad -lt 0 ]; then pad=0; fi
-  printf "${BOLD}${CYAN}│${NC}  %b%*s${BOLD}${CYAN}│${NC}\n" "$content" "$pad" ""
+  printf "${BOLD}${CYAN}│${NC}  %b%*s  ${BOLD}${CYAN}│${NC}\n" "$content" "$pad" ""
 }
 
 # ==============================================================================
@@ -463,8 +468,7 @@ print_box_line() {
 LAN_IP=$(get_lan_ip)
 RAY_PORT="4567"
 BRAIN_PORT="4500"
-BOX_WIDTH=72
-BOX_BORDER=$(printf "%${BOX_WIDTH}s" "" | tr " " "─")
+BOX_BORDER=$(printf '─%.0s' {1..70})
 
 echo ""
 echo -e "${BOLD}${CYAN}╭${BOX_BORDER}╮${NC}"

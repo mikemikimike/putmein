@@ -1,9 +1,11 @@
 # ==============================================================================
 # PutmeIn Windows Installation Script (PowerShell)
-# Usage: irm https://get.putme.in/ps1 | iex
+# Usage: irm https://putme.in/install.ps1 | iex
 # ==============================================================================
 
-$ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+$ErrorActionPreference = "Continue"
 
 function Write-Color([string]$text, [ConsoleColor]$color) {
     Write-Host $text -ForegroundColor $color
@@ -30,6 +32,15 @@ function Write-ErrorMsg([string]$msg) {
     Write-Host $msg -ForegroundColor White
 }
 
+function Test-DockerRunning {
+    try {
+        $null = & docker info 2>&1
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    }
+}
+
 Clear-Host
 Write-Color "   ___       __                ____     " Cyan
 Write-Color "  / _ \__ __/ /_  __ _  ___   /  _/__   " Cyan
@@ -54,13 +65,43 @@ Write-Step "2/6" "Checking Docker Engine..."
 $hasDocker = Get-Command docker -ErrorAction SilentlyContinue
 
 if ($hasDocker) {
-    try {
-        docker info 2>&1 | Out-Null
-        $dockerVer = (docker --version)
+    if (Test-DockerRunning) {
+        $dockerVer = (& docker --version 2>&1)
         Write-Success "Docker is running ($dockerVer)"
-    } catch {
-        Write-WarnMsg "Docker is installed but the Docker Desktop daemon is not running."
-        Write-WarnMsg "Please launch Docker Desktop and ensure it has completed initialization."
+    } else {
+        # Check if Docker Desktop is installed
+        $desktopPaths = @(
+            "$env:ProgramFiles\Docker\Docker\Docker Desktop.exe",
+            "${env:ProgramFiles(x86)}\Docker\Docker\Docker Desktop.exe",
+            "$env:LOCALAPPDATA\Programs\Docker Desktop\Docker Desktop.exe"
+        )
+        $desktopExe = $desktopPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+        if ($desktopExe) {
+            Write-WarnMsg "Docker is installed but the Docker Desktop daemon is not active."
+            Write-Color "  Attempting to launch Docker Desktop in background..." Cyan
+            try {
+                Start-Process $desktopExe
+                Write-Host "  Waiting for Docker Desktop engine to initialize..." -ForegroundColor Cyan -NoNewline
+                for ($i = 1; $i -le 20; $i++) {
+                    Start-Sleep -Seconds 2
+                    Write-Host "." -ForegroundColor Cyan -NoNewline
+                    if (Test-DockerRunning) {
+                        break
+                    }
+                }
+                Write-Host ""
+            } catch {}
+
+            if (Test-DockerRunning) {
+                Write-Success "Docker Desktop initialized successfully!"
+            } else {
+                Write-WarnMsg "Docker Desktop is still initializing. Continuing setup..."
+            }
+        } else {
+            Write-WarnMsg "Docker is installed but the daemon is not running."
+            Write-WarnMsg "Please launch Docker Desktop to enable local containerized databases."
+        }
     }
 } else {
     Write-WarnMsg "Docker was not found on your system."
@@ -68,7 +109,7 @@ if ($hasDocker) {
     if ($hasWinget) {
         Write-Color "  Installing Docker Desktop via winget..." Cyan
         winget install Docker.DockerDesktop --accept-package-agreements --accept-source-agreements
-        Write-Success "Docker Desktop installed. Please launch it and restart this script."
+        Write-Success "Docker Desktop installed. Please launch it and restart this installer if needed."
     } else {
         Write-WarnMsg "Please install Docker Desktop from https://www.docker.com/products/docker-desktop/"
     }
@@ -135,37 +176,53 @@ $envFile = Join-Path $configDir ".env"
 $mysqlContainer = "putmein-mysql"
 $mysqlPort = "3306"
 
-$existingContainers = docker ps -a --format "{{.Names}}" 2>$null
-if ($existingContainers -contains $mysqlContainer) {
-    $runningContainers = docker ps --format "{{.Names}}" 2>$null
-    if ($runningContainers -contains $mysqlContainer) {
-        Write-Success "Persistent MySQL container ($mysqlContainer) is running."
+if (Test-DockerRunning) {
+    $existingContainers = @()
+    try {
+        $out = (& docker ps -a --format "{{.Names}}" 2>$null)
+        if ($out) {
+            $existingContainers = $out -split "`r?`n"
+        }
+    } catch {}
+
+    if ($existingContainers -contains $mysqlContainer) {
+        $runningContainers = @()
+        try {
+            $out = (& docker ps --format "{{.Names}}" 2>$null)
+            if ($out) {
+                $runningContainers = $out -split "`r?`n"
+            }
+        } catch {}
+
+        if ($runningContainers -contains $mysqlContainer) {
+            Write-Success "Persistent MySQL container ($mysqlContainer) is running."
+        } else {
+            & docker start $mysqlContainer 2>$null | Out-Null
+            Write-Success "Started existing MySQL container."
+        }
     } else {
-        docker start $mysqlContainer | Out-Null
-        Write-Success "Started existing MySQL container."
-    }
-} else {
-    # Generate random password
-    $bytes = New-Object byte[] 16
-    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $rng.GetBytes($bytes)
-    $dbPassword = [BitConverter]::ToString($bytes).Replace("-", "").ToLower()
+        # Generate random password
+        $bytes = New-Object byte[] 16
+        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        $rng.GetBytes($bytes)
+        $dbPassword = [BitConverter]::ToString($bytes).Replace("-", "").ToLower()
 
-    Write-Color "  Creating dedicated MySQL container on port $mysqlPort..." Cyan
-    docker run -d `
-        --name $mysqlContainer `
-        --restart unless-stopped `
-        -p "127.0.0.1:${mysqlPort}:3306" `
-        -e "MYSQL_ROOT_PASSWORD=$dbPassword" `
-        -e "MYSQL_DATABASE=putmein" `
-        -v "putmein_mysql_data:/var/lib/mysql" `
-        mysql:8.0 | Out-Null
+        Write-Color "  Creating dedicated MySQL container on port $mysqlPort..." Cyan
+        & docker run -d `
+            --name $mysqlContainer `
+            --restart unless-stopped `
+            -p "127.0.0.1:${mysqlPort}:3306" `
+            -e "MYSQL_ROOT_PASSWORD=$dbPassword" `
+            -e "MYSQL_DATABASE=putmein" `
+            -v "putmein_mysql_data:/var/lib/mysql" `
+            mysql:8.0 2>$null | Out-Null
 
-    $secretBytes = New-Object byte[] 8
-    $rng.GetBytes($secretBytes)
-    $secret = [BitConverter]::ToString($secretBytes).Replace("-", "").ToLower()
+        $secretBytes = New-Object byte[] 8
+        $rng.GetBytes($secretBytes)
+        $secret = [BitConverter]::ToString($secretBytes).Replace("-", "").ToLower()
 
-    $envContent = @"
+        $envContent = @"
+# PutmeIn Local Environment
 DATABASE_URL="mysql://root:${dbPassword}@127.0.0.1:${mysqlPort}/putmein"
 RAY_PORT=4567
 BRAIN_PORT=4500
@@ -175,21 +232,46 @@ NEXT_PUBLIC_BRAIN_URL="http://localhost:4500"
 BRAIN_INTERNAL_SECRET="putmein-sec-$secret"
 AGENT_AUTONOMOUS="false"
 "@
-    Set-Content -Path $envFile -Value $envContent
-    Write-Success "Database configured and credentials saved to $envFile"
+        Set-Content -Path $envFile -Value $envContent
+        Write-Success "Database configured and credentials saved to $envFile"
 
-    # Wait for MySQL readiness
-    Write-Host "  Waiting for database engine to accept connections..." -ForegroundColor Cyan -NoNewline
-    for ($i = 1; $i -le 30; $i++) {
-        $ping = docker exec $mysqlContainer mysqladmin ping -h localhost -uroot -p"$dbPassword" 2>$null
-        if ($ping -match "alive") {
-            break
+        # Wait for MySQL readiness
+        Write-Host "  Waiting for database engine to accept connections..." -ForegroundColor Cyan -NoNewline
+        for ($i = 1; $i -le 30; $i++) {
+            $ping = & docker exec $mysqlContainer mysqladmin ping -h localhost -uroot -p"$dbPassword" 2>$null
+            if ($ping -match "alive") {
+                break
+            }
+            Start-Sleep -Seconds 1
+            Write-Host "." -ForegroundColor Cyan -NoNewline
         }
-        Start-Sleep -Seconds 1
-        Write-Host "." -ForegroundColor Cyan -NoNewline
+        Write-Host ""
+        Write-Success "Database engine ready!"
     }
-    Write-Host ""
-    Write-Success "Database engine ready!"
+} else {
+    Write-WarnMsg "Docker daemon is currently offline. Creating default environment configuration."
+    if (!(Test-Path $envFile)) {
+        $secretBytes = New-Object byte[] 8
+        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        $rng.GetBytes($secretBytes)
+        $secret = [BitConverter]::ToString($secretBytes).Replace("-", "").ToLower()
+
+        $envContent = @"
+# PutmeIn Local Environment
+DATABASE_URL="mysql://root:root@127.0.0.1:3306/putmein"
+RAY_PORT=4567
+BRAIN_PORT=4500
+RAY_URL="http://localhost:4567"
+BRAIN_URL="http://localhost:4500"
+NEXT_PUBLIC_BRAIN_URL="http://localhost:4500"
+BRAIN_INTERNAL_SECRET="putmein-sec-$secret"
+AGENT_AUTONOMOUS="false"
+"@
+        Set-Content -Path $envFile -Value $envContent
+    }
+    Write-Success "Configuration saved to $envFile"
+    Write-WarnMsg "Once Docker Desktop is running, create your container by executing:"
+    Write-Color "    docker run -d --name putmein-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=putmein mysql:8.0" DarkYellow
 }
 
 # ==============================================================================
@@ -199,29 +281,68 @@ Write-Step "6/6" "Installing PutmeIn Engine & Starting Services..."
 Write-Color "  Installing putmein-test package from NPM..." Cyan
 npm install -g putmein-test
 
+# If MySQL is running, sync prisma schema
+if (Test-DockerRunning) {
+    try {
+        $globalNpm = (npm root -g 2>$null)
+        if ($globalNpm) {
+            $pkgRayDir = Join-Path $globalNpm.Trim() "putmein-test\dist\ray"
+            if (Test-Path $pkgRayDir) {
+                Write-Color "  Synchronizing database schema..." Cyan
+                Push-Location $pkgRayDir
+                npx prisma db push --skip-generate --accept-data-loss 2>$null | Out-Null
+                Pop-Location
+                Write-Success "Database schema synchronized!"
+            }
+        }
+    } catch {
+        if ($pkgRayDir) { Pop-Location 2>$null }
+    }
+}
+
+# Reset PM2 daemon to guarantee clean process table
+try { pm2 kill 2>$null | Out-Null } catch {}
+
 # Start services via ray CLI
-Write-Color "  Starting PutmeIn services..." Cyan
+Write-Color "  Starting PutmeIn services (Ray & Brain)..." Cyan
 ray start
 
 # Output Finish
+function Write-BoxLine([string]$content = "", [ConsoleColor]$color = [ConsoleColor]::White) {
+    $innerWidth = 66
+    $len = $content.Length
+    $pad = [Math]::Max(0, $innerWidth - $len)
+    $spaces = " " * $pad
+    Write-Host "│" -ForegroundColor Cyan -NoNewline
+    Write-Host "  " -NoNewline
+    if ($content.Length -gt 0) {
+        Write-Host $content -ForegroundColor $color -NoNewline
+    }
+    Write-Host "$spaces  " -NoNewline
+    Write-Host "│" -ForegroundColor Cyan
+}
+
+$boxBorder = "─" * 70
 Write-Host ""
-Write-Host "╭────────────────────────────────────────────────────────────────────────╮" -ForegroundColor Cyan
-Write-Host "│                                                                        │" -ForegroundColor Cyan
-Write-Host "│   PutmeIn successfully installed and running!                         │" -ForegroundColor Green
-Write-Host "│                                                                        │" -ForegroundColor Cyan
-Write-Host "│   Web Dashboard (Ray):    http://localhost:4567                         │" -ForegroundColor White
-Write-Host "│   AI Backend (Brain):     http://localhost:4500                         │" -ForegroundColor DarkGray
-Write-Host "│                                                                        │" -ForegroundColor Cyan
-Write-Host "│   Default Admin Login:                                                 │" -ForegroundColor White
-Write-Host "│     • Email:    admin@putme.in                                         │" -ForegroundColor Yellow
-Write-Host "│     • Password: admin123                                               │" -ForegroundColor Yellow
-Write-Host "│                                                                        │" -ForegroundColor Cyan
-Write-Host "│   Useful CLI Commands:                                                 │" -ForegroundColor White
-Write-Host "│     • ray status         Inspect service health and memory            │" -ForegroundColor Yellow
-Write-Host "│     • ray logs           Stream real-time unified logs                │" -ForegroundColor Yellow
-Write-Host "│     • ray stop           Stop running background services             │" -ForegroundColor Yellow
-Write-Host "│     • ray restart        Restart background services                  │" -ForegroundColor Yellow
-Write-Host "│     • ray cohen          Launch the interactive terminal TUI          │" -ForegroundColor Yellow
-Write-Host "│                                                                        │" -ForegroundColor Cyan
-Write-Host "╰────────────────────────────────────────────────────────────────────────╯" -ForegroundColor Cyan
+Write-Host "╭$boxBorder╮" -ForegroundColor Cyan
+Write-BoxLine ""
+Write-BoxLine "✔ PutmeIn successfully installed and running!" -color Green
+Write-BoxLine ""
+Write-BoxLine "Web Dashboard (Ray):    http://localhost:4567"
+Write-BoxLine "Network Dashboard:      http://127.0.0.1:4567"
+Write-BoxLine "AI Backend (Brain):     http://localhost:4500"
+Write-BoxLine ""
+Write-BoxLine "Default Admin Login:"
+Write-BoxLine "  • Email:    admin@putme.in" -color Yellow
+Write-BoxLine "  • Password: admin123" -color Yellow
+Write-BoxLine ""
+Write-BoxLine "Useful CLI Commands:"
+Write-BoxLine "  • ray status         Inspect service health and memory" -color Yellow
+Write-BoxLine "  • ray logs           Stream real-time unified logs" -color Yellow
+Write-BoxLine "  • ray stop           Stop running background services" -color Yellow
+Write-BoxLine "  • ray restart        Restart background services" -color Yellow
+Write-BoxLine "  • ray cohen          Launch interactive terminal TUI" -color Yellow
+Write-BoxLine "  • ray --no-startup   Disable launching on system boot" -color Yellow
+Write-BoxLine ""
+Write-Host "╰$boxBorder╯" -ForegroundColor Cyan
 Write-Host ""
