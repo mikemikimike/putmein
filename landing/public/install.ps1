@@ -41,10 +41,12 @@ function Test-DockerRunning {
     }
 }
 
-Write-Color "   ___       __                ____     " Cyan
-Write-Color "  / _ \__ __/ /_  __ _  ___   /  _/__   " Cyan
-Write-Color " / ___/ // / __/ /  ' \/ -_) _/ // _ \  " Cyan
-Write-Color "/_/   \_,_/\__/ /_/_/_/\__/ /___/_//_/  " Cyan
+Write-Color "██████╗ ██╗   ██╗████████╗███╗   ███╗███████╗   ██╗███╗   ██╗" Cyan
+Write-Color "██╔══██╗██║   ██║╚══██╔══╝████╗ ████║██╔════╝   ██║████╗  ██║" Cyan
+Write-Color "██████╔╝██║   ██║   ██║   ██╔████╔██║█████╗     ██║██╔██╗ ██║" Cyan
+Write-Color "██╔═══╝ ██║   ██║   ██║   ██║╚██╔╝██║██╔══╝     ██║██║╚██╗██║" Cyan
+Write-Color "██║     ╚██████╔╝   ██║   ██║ ╚═╝ ██║███████╗██╗██║██║ ╚████║" Cyan
+Write-Color "╚═╝      ╚═════╝    ╚═╝   ╚═╝     ╚═╝╚══════╝╚═╝╚═╝╚═╝  ╚═══╝" Cyan
 Write-Host ""
 Write-Color "Autonomous DevOps, Infrastructure Monitoring & Deployment Engine" White
 Write-Color "Windows Installer - https://putme.in" DarkGray
