@@ -33,11 +33,12 @@ export async function POST(
         commitMessage,
         author,
         stages: JSON.stringify([
-          { name: "Git Clone", status: "running" },
-          { name: "Dependencies", status: "pending" },
-          { name: "Docker Build", status: "pending" },
-          { name: "Container Deploy", status: "pending" },
-          { name: "Healthcheck", status: "pending" },
+          { name: "Git Clone & Sync", status: "running", durationMs: 0 },
+          { name: "Dependencies", status: "pending", durationMs: 0 },
+          { name: "Security Audit", status: "pending", durationMs: 0 },
+          { name: "Docker Build", status: "pending", durationMs: 0 },
+          { name: "Container Deploy", status: "pending", durationMs: 0 },
+          { name: "Healthcheck", status: "pending", durationMs: 0 },
         ]),
         logs: `Received GitHub webhook event: ${event}\nCommit: ${commitHash}\n`,
       },
@@ -49,17 +50,16 @@ export async function POST(
       data: { status: "running", lastRunAt: new Date() },
     });
 
-    // Dispatch build to Brain
-    fetch(`${BRAIN_URL}/v1/deploy`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: pipeline.name,
-        repoUrl: pipeline.repoUrl,
-        branch: pipeline.branch,
-        port: pipeline.port,
-      }),
-    }).catch(() => {});
+    // Trigger full CI/CD run asynchronously via unified runner
+    const { executePipelineRun } = await import("@/lib/cicd-runner");
+    executePipelineRun({
+      pipelineId: id,
+      runId: run.id,
+      userId: pipeline.userId,
+      overrideAuthor: author,
+    }).catch((err) => {
+      console.error("executePipelineRun error in webhook/[id]:", err);
+    });
 
     return NextResponse.json({ ok: true, runId: run.id });
   } catch (err) {

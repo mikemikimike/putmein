@@ -64,8 +64,10 @@ export async function POST(req: NextRequest) {
     const results = [];
 
     // Trigger CI/CD Pipelines
+    const triggeredPipelineNames = new Set<string>();
     for (const pipe of pipelines) {
       if (!pipe.autoDeploy) continue;
+      triggeredPipelineNames.add(pipe.name.toLowerCase());
 
       const run = await prisma.rayPipelineRun.create({
         data: {
@@ -75,9 +77,11 @@ export async function POST(req: NextRequest) {
           author: headCommit?.author?.name || payload.pusher?.name || "GitHub Push",
           status: "running",
           stages: JSON.stringify([
-            { name: "Webhook Received", status: "success", durationMs: 50 },
-            { name: "Git Sync", status: "running", durationMs: 0 },
-            { name: "Docker Build & Deploy", status: "pending", durationMs: 0 },
+            { name: "Git Clone & Sync", status: "running", durationMs: 0 },
+            { name: "Dependencies", status: "pending", durationMs: 0 },
+            { name: "Security Audit", status: "pending", durationMs: 0 },
+            { name: "Docker Build", status: "pending", durationMs: 0 },
+            { name: "Container Deploy", status: "pending", durationMs: 0 },
             { name: "Healthcheck", status: "pending", durationMs: 0 },
           ]),
           logs: `Webhook received for ${repoFullName} (${branch})\nCommit: ${headCommit?.id || "latest"} - ${headCommit?.message || ""}\n`,
@@ -89,89 +93,43 @@ export async function POST(req: NextRequest) {
         data: { status: "running", lastRunAt: new Date() },
       });
 
-      // Target directory for deployment
-      const targetDir = path.join(baseDeployDir, pipe.name);
-      const { getEffectiveGitHubToken } = await import("@/lib/github-app");
-      const effectiveToken = await getEffectiveGitHubToken(pipe.userId);
-      const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "" };
-
-      try {
-        if (!fs.existsSync(targetDir)) {
-          let authCloneUrl = cloneUrl;
-          if (effectiveToken) {
-            authCloneUrl = cloneUrl.replace("https://", `https://x-access-token:${effectiveToken}@`);
-          }
-          execSync(`git clone -b ${branch || pipe.branch} --single-branch "${authCloneUrl}" "${targetDir}"`, { env: gitEnv });
-        } else {
-          execSync(`cd "${targetDir}" && git fetch origin ${branch || pipe.branch} && git reset --hard origin/${branch || pipe.branch}`, { env: gitEnv });
-        }
-
-        // Trigger container deployment via brain
-        fetch(`${BRAIN_URL}/v1/deploy`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: pipe.userId,
-            name: pipe.name,
-            projectPath: targetDir,
-            sourceType: "github",
-            repoUrl: cloneUrl,
-            branch: branch || pipe.branch,
-            port: pipe.port || 3000,
-          }),
-        })
-          .then(async (res) => {
-            if (res.ok) {
-              await prisma.rayPipelineRun.update({
-                where: { id: run.id },
-                data: { status: "success", logs: run.logs + "\nDeploy triggered successfully." },
-              });
-              await prisma.rayPipeline.update({
-                where: { id: pipe.id },
-                data: { status: "success" },
-              });
-            } else {
-              await prisma.rayPipelineRun.update({
-                where: { id: run.id },
-                data: { status: "failed", logs: run.logs + "\nDeploy failed on Brain." },
-              });
-              await prisma.rayPipeline.update({
-                where: { id: pipe.id },
-                data: { status: "failed" },
-              });
-            }
-          })
-          .catch(async (e) => {
-            await prisma.rayPipelineRun.update({
-              where: { id: run.id },
-              data: { status: "failed", logs: run.logs + `\nDeploy error: ${e.message}` },
-            });
-          });
-      } catch (gitErr) {
-        await prisma.rayPipelineRun.update({
-          where: { id: run.id },
-          data: { status: "failed", logs: run.logs + `\nGit error: ${(gitErr as Error).message}` },
-        });
-      }
+      const { executePipelineRun } = await import("@/lib/cicd-runner");
+      executePipelineRun({
+        pipelineId: pipe.id,
+        runId: run.id,
+        userId: pipe.userId,
+        overrideAuthor: headCommit?.author?.name || payload.pusher?.name || undefined,
+      }).catch((e) => console.error("Pipeline auto-deploy error:", e));
 
       results.push({ pipelineId: pipe.id, name: pipe.name, runId: run.id, status: "building" });
     }
 
-    // Trigger Deployments
+    // Trigger Standalone Deployments (if not already handled by a pipeline above)
     for (const dep of deployments) {
+      if (triggeredPipelineNames.has(dep.name.toLowerCase())) continue;
+
       const targetDir = dep.projectPath || path.join(baseDeployDir, dep.name);
       const { getEffectiveGitHubToken } = await import("@/lib/github-app");
       const effectiveToken = await getEffectiveGitHubToken(dep.userId);
       const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "" };
 
-      if (!fs.existsSync(targetDir)) {
-        let authCloneUrl = cloneUrl;
-        if (effectiveToken) {
-          authCloneUrl = cloneUrl.replace("https://", `https://x-access-token:${effectiveToken}@`);
+      let authUrl = cloneUrl;
+      if (effectiveToken && cloneUrl.includes("github.com")) {
+        authUrl = cloneUrl.replace("https://", `https://x-access-token:${effectiveToken}@`);
+      }
+
+      try {
+        if (!fs.existsSync(targetDir)) {
+          execSync(`git clone -b ${branch || dep.branch || "main"} --single-branch "${authUrl}" "${targetDir}"`, { env: gitEnv });
+        } else {
+          execSync(`git -C "${targetDir}" remote set-url origin "${cloneUrl}"`, { env: gitEnv });
+          execSync(`git -C "${targetDir}" fetch "${authUrl}" "${branch || dep.branch || "main"}"`, { env: gitEnv });
+          execSync(`git -C "${targetDir}" checkout "${branch || dep.branch || "main"}"`, { env: gitEnv });
+          execSync(`git -C "${targetDir}" reset --hard FETCH_HEAD`, { env: gitEnv });
+          execSync(`git -C "${targetDir}" clean -fd`, { env: gitEnv });
         }
-        execSync(`git clone -b ${branch || dep.branch || "main"} --single-branch "${authCloneUrl}" "${targetDir}"`, { env: gitEnv });
-      } else {
-        execSync(`cd "${targetDir}" && git fetch origin ${branch || dep.branch || "main"} && git reset --hard origin/${branch || dep.branch || "main"}`, { env: gitEnv });
+      } catch (gitErr) {
+        console.error(`Git sync error for deployment ${dep.name}:`, gitErr);
       }
 
       // Update deployment record to building status

@@ -293,11 +293,11 @@ export const MODELS: ModelItem[] = PROVIDER_GROUPS.flatMap((g) => g.models);
 
 export const PROVIDER_LOGOS: Record<string, string> = {
   ozias: "/ai/ozias.png",
-  claude: "/ai/Claude.svg",
-  openai: "/ai/OpenAI.svg",
-  deepseek: "/ai/DeepSeek.svg",
-  gemini: "/ai/Gemini.svg",
-  openrouter: "/ai/OpenRouter.svg",
+  claude: "/ai/claude.svg",
+  openai: "/ai/openai.svg",
+  deepseek: "/ai/deepseek.svg",
+  gemini: "/ai/gemini.svg",
+  openrouter: "/ai/openrouter.svg",
 };
 
 // Provider Logo Component using public/ai vector SVGs

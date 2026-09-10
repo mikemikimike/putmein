@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Auto-resolve building / pending states if container exists or static deploy finished
+    // Update deployments without prematurely resolving building states
     const updatedDeployments = await Promise.all(
       deployments.map(async (dep) => {
         const baseName = dep.name.toLowerCase();
@@ -75,37 +75,36 @@ export async function GET(req: NextRequest) {
 
         let activeDep = dep;
         if (dep.status === "building" || dep.status === "pending") {
-          if (matched && matched.state === "running") {
-            activeDep = await prisma.rayDeployment.update({
-              where: { id: dep.id },
-              data: {
-                status: "healthy",
-                containerName: matched.name,
-                hostPort: matched.port || dep.hostPort,
-                deployUrl: matched.url || dep.deployUrl,
-                buildLogs: dep.buildLogs || `Build finished successfully.\nDocker container ${matched.name} is running.`,
-              },
-            });
-          } else if (matched && (matched.state === "exited" || matched.state === "dead")) {
+          // If building was started recently, preserve building status.
+          // Never prematurely mark as healthy just because an older container exists!
+          const ageMs = Date.now() - new Date(dep.updatedAt || dep.createdAt).getTime();
+          if (ageMs > 15 * 60 * 1000) {
             activeDep = await prisma.rayDeployment.update({
               where: { id: dep.id },
               data: {
                 status: "failed",
-                buildLogs: (dep.buildLogs || "") + `\n[Ray] Container ${matched.name} exited with non-zero code.`,
+                buildLogs: (dep.buildLogs || "") + "\n[Ray] Build timed out after 15 minutes.",
               },
             });
-          } else if (dep.sourceType === "static") {
-            const ageMs = Date.now() - new Date(dep.createdAt).getTime();
-            if (ageMs > 5000) {
-              activeDep = await prisma.rayDeployment.update({
-                where: { id: dep.id },
-                data: {
-                  status: "healthy",
-                  buildLogs: dep.buildLogs || "Deploy finished. Static application packaged and ready.",
-                },
-              });
-            }
           }
+        } else if (dep.sourceType === "static" && dep.status === "pending") {
+          const ageMs = Date.now() - new Date(dep.createdAt).getTime();
+          if (ageMs > 5000) {
+            activeDep = await prisma.rayDeployment.update({
+              where: { id: dep.id },
+              data: {
+                status: "healthy",
+                buildLogs: dep.buildLogs || "Deploy finished. Static application packaged and ready.",
+              },
+            });
+          }
+        } else if (dep.status === "healthy" && matched && (matched.state === "exited" || matched.state === "dead")) {
+          activeDep = await prisma.rayDeployment.update({
+            where: { id: dep.id },
+            data: {
+              status: "stopped",
+            },
+          });
         }
 
         // Detect framework and runtime stack

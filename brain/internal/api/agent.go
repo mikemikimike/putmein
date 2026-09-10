@@ -129,10 +129,11 @@ func autonomousStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 // settingsHandler handles GET and POST /v1/settings
 type settingsPayload struct {
-	Autonomous      *bool             `json:"autonomous,omitempty"`
-	DeploymentsPath *string           `json:"deploymentsPath,omitempty"`
-	ApiKeys         map[string]string `json:"apiKeys,omitempty"`
-	RemoveApiKey    string            `json:"removeApiKey,omitempty"`
+	Autonomous            *bool             `json:"autonomous,omitempty"`
+	DeploymentsPath       *string           `json:"deploymentsPath,omitempty"`
+	SecurityChecksEnabled *bool             `json:"securityChecksEnabled,omitempty"`
+	ApiKeys               map[string]string `json:"apiKeys,omitempty"`
+	RemoveApiKey          string            `json:"removeApiKey,omitempty"`
 }
 
 func settingsHandler(w http.ResponseWriter, r *http.Request) {
@@ -143,6 +144,7 @@ func settingsHandler(w http.ResponseWriter, r *http.Request) {
 			"autonomous":             agent.IsAutonomousMode(),
 			"deploymentsPath":        agent.GetDeploymentsDir(),
 			"defaultDeploymentsPath": agent.DefaultDeploymentsDir(),
+			"securityChecksEnabled":  agent.IsSecurityChecksEnabled(),
 			"apiKeys": map[string]bool{
 				"ozias":      ai.GetProviderKey("ozias") != "",
 				"minimax":    ai.GetProviderKey("ozias") != "",
@@ -165,6 +167,9 @@ func settingsHandler(w http.ResponseWriter, r *http.Request) {
 		if body.DeploymentsPath != nil {
 			agent.SetDeploymentsDir(*body.DeploymentsPath)
 		}
+		if body.SecurityChecksEnabled != nil {
+			agent.SetSecurityChecksEnabled(*body.SecurityChecksEnabled)
+		}
 		if body.RemoveApiKey != "" {
 			agent.RemoveAPIKey(body.RemoveApiKey)
 		}
@@ -176,6 +181,7 @@ func settingsHandler(w http.ResponseWriter, r *http.Request) {
 			"autonomous":             agent.IsAutonomousMode(),
 			"deploymentsPath":        agent.GetDeploymentsDir(),
 			"defaultDeploymentsPath": agent.DefaultDeploymentsDir(),
+			"securityChecksEnabled":  agent.IsSecurityChecksEnabled(),
 			"apiKeys": map[string]bool{
 				"ozias":      ai.GetProviderKey("ozias") != "",
 				"minimax":    ai.GetProviderKey("ozias") != "",

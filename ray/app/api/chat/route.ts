@@ -1,13 +1,19 @@
 import { cookies } from "next/headers";
 import { verifyToken } from "@/lib/auth";
 import { NextRequest } from "next/server";
-
 import prisma from "@/lib/prisma";
+import { chatRunner } from "@/lib/chatRunner";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const SSE_HEADERS = {
+  "Content-Type": "text/event-stream; charset=utf-8",
+  "Cache-Control": "no-cache, no-transform",
+  Connection: "keep-alive",
+  "X-Accel-Buffering": "no",
+  "x-vercel-ai-data-stream": "v1",
+};
 
 export async function POST(request: NextRequest) {
   // Verify authentication
@@ -31,121 +37,119 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { messages, modelId = "MiniMax-M3" } = body;
+    let {
+      sessionId,
+      messages,
+      modelId = "MiniMax-M3",
+      userMessageToSave,
+      attachedContextItem,
+    } = body;
 
-    // Fetch user's monitor projects from DB to give AI full context
-    let monitorProjects: unknown[] = [];
-    try {
-      const dbProjects = await prisma.rayMonitorProject.findMany({
-        where: { userId: user.userId },
-        orderBy: { updatedAt: "desc" },
-        include: {
-          alerts: {
-            where: { dismissed: false },
-            orderBy: { createdAt: "desc" },
-            take: 5,
-          },
+    // Ensure session exists and belongs to this user
+    if (sessionId) {
+      const existingSession = await prisma.rayChatSession.findFirst({
+        where: { id: sessionId, userId: user.userId },
+      });
+      if (!existingSession) {
+        return new Response(JSON.stringify({ error: "Session not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    } else {
+      // Create session if not passed
+      const firstUserMsg = Array.isArray(messages) && messages.length > 0
+        ? messages[messages.length - 1]?.content || "New Chat"
+        : "New Chat";
+      const title = firstUserMsg.slice(0, 40).replace(/\n/g, " ");
+      const newSession = await prisma.rayChatSession.create({
+        data: {
+          userId: user.userId,
+          title,
+          model: modelId,
         },
       });
-      monitorProjects = dbProjects.map((p) => ({
-        id: p.id,
-        name: p.name,
-        projectPath: p.projectPath,
-        logPaths: p.logPaths,
-        logCommand: p.logCommand,
-        runCommand: p.runCommand,
-        intervalSec: p.intervalSec,
-        status: p.status,
-        memory: p.memory,
-        memoryStatus: p.memoryStatus,
-        projectUrl: p.projectUrl,
-        managedPid: p.managedPid,
-        managedLogFile: p.managedLogFile,
-        alerts: p.alerts.map((a) => ({
-          severity: a.severity,
-          message: a.message,
-          createdAt: a.createdAt.toISOString(),
-        })),
-      }));
-    } catch (dbErr) {
-      console.warn("Could not load monitor projects for chat:", dbErr);
+      sessionId = newSession.id;
     }
 
-    // Fetch user's GitHub integration for authenticated git operations
-    let githubToken: string | null = null;
-    let githubUsername = "";
-    try {
-      const { getEffectiveGitHubToken } = await import("@/lib/github-app");
-      githubToken = await getEffectiveGitHubToken(user.userId);
-      const integration = await prisma.rayGithubIntegration.findFirst({
-        where: { userId: user.userId },
-      });
-      if (integration?.githubUsername) {
-        githubUsername = integration.githubUsername;
-      }
-    } catch { /* silent */ }
-
-    // Proxy the request to brain — brain owns all AI logic
-    // Sanitize messages so internal metadata comments are stripped from the AI context
-    const sanitizedMessages = Array.isArray(messages)
-      ? messages.map((m: { role: string; content: string }) => ({
-          role: m.role,
-          content: typeof m.content === "string"
-            ? m.content.replace(/^<!-- (rayAssistantMeta|attachedContext):[\s\S]*?-->\n?/, "")
-            : m.content,
-        }))
-      : messages;
-
-    const brainResponse = await fetch(`${BRAIN_URL}/v1/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messages: sanitizedMessages,
-        modelId,
-        mode: "web",
-        userId: user.userId,
-        monitorProjects,
-        githubToken: githubToken || undefined,
-        githubUsername: githubUsername || undefined,
-      }),
+    // Start background chat run (if not already running)
+    await chatRunner.startRun({
+      sessionId,
+      userId: user.userId,
+      messages,
+      modelId,
+      userMessageToSave,
+      attachedContextItem,
     });
 
-    if (!brainResponse.ok) {
-      const errText = await brainResponse.text();
-      console.error("Brain error:", brainResponse.status, errText);
-      const message = errText.trim()
-        ? `Brain AI service error (${brainResponse.status}): ${errText.trim()}`
-        : "Brain AI service is not available. Something went wrong.";
-      return new Response(
-        JSON.stringify({ error: message }),
-        {
-          status: brainResponse.status >= 400 && brainResponse.status < 600 ? brainResponse.status : 502,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
+    // Subscribe to SSE stream (replaying buffer + live stream)
+    const stream = chatRunner.subscribe(sessionId, user.userId);
 
-    // Pipe brain's SSE stream directly back to the client
-    // brain already emits Vercel AI SDK-compatible format (0:, d: lines)
-    return new Response(brainResponse.body, {
+    return new Response(stream, {
       headers: {
-        "Content-Type": "text/event-stream; charset=utf-8",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-        "X-Accel-Buffering": "no",
-        "x-vercel-ai-data-stream": "v1",
+        ...SSE_HEADERS,
+        "x-ray-session-id": sessionId,
       },
     });
   } catch (error) {
-    console.error("Chat proxy error:", error);
+    console.error("Chat run error:", error);
     return new Response(
-      JSON.stringify({ error: "Server connection error: Unable to communicate with Brain AI backend. Something went wrong." }),
+      JSON.stringify({ error: "Unable to start chat run. Something went wrong." }),
       {
         status: 500,
         headers: { "Content-Type": "application/json" },
       }
     );
   }
+}
+
+// GET /api/chat?sessionId=... — attach to active or completed stream
+export async function GET(request: NextRequest) {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("ray_token")?.value;
+
+  if (!token) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const user = await verifyToken(token);
+  if (!user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const sessionId = searchParams.get("sessionId");
+
+  if (!sessionId) {
+    return new Response(JSON.stringify({ error: "sessionId required" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const session = await prisma.rayChatSession.findFirst({
+    where: { id: sessionId, userId: user.userId },
+  });
+
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Session not found" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const stream = chatRunner.subscribe(sessionId, user.userId);
+
+  return new Response(stream, {
+    headers: {
+      ...SSE_HEADERS,
+      "x-ray-session-id": sessionId,
+    },
+  });
 }

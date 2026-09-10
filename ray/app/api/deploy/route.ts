@@ -151,6 +151,47 @@ export async function POST(req: NextRequest) {
                     buildLogs: accumulatedLogs,
                   },
                 });
+
+                // Trigger automated post-deployment security scan if enabled
+                (async () => {
+                  try {
+                    const settingsRes = await fetch(`${BRAIN_URL}/v1/settings`).catch(() => null);
+                    const settingsData = settingsRes?.ok ? await settingsRes.json() : null;
+                    if (settingsData?.securityChecksEnabled !== false) {
+                      const secRes = await fetch(`${BRAIN_URL}/v1/security/scan`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          projectId: matchingProject?.id || deployment.id,
+                          projectName: name,
+                          projectPath: projectPath,
+                          trigger: "deploy_first_time",
+                        }),
+                      });
+                      if (secRes.ok) {
+                        const secData = await secRes.json();
+                        if (secData?.report) {
+                          await prisma.raySecurityScan.create({
+                            data: {
+                              userId: user.userId,
+                              projectId: matchingProject?.id || deployment.id,
+                              projectName: name,
+                              trigger: "deploy_first_time",
+                              status: secData.report.status || "passed",
+                              dangerCount: secData.report.dangerCount || 0,
+                              warnCount: secData.report.warnCount || 0,
+                              infoCount: secData.report.infoCount || 0,
+                              findings: JSON.stringify(secData.report.findings || []),
+                              logs: secData.report.logs || "",
+                            },
+                          });
+                        }
+                      }
+                    }
+                  } catch (secErr) {
+                    console.warn("[Security] Auto-scan error:", secErr);
+                  }
+                })();
               } else if (data.step === "failed" || data.status === "error") {
                 await prisma.rayDeployment.update({
                   where: { id: deployment.id },

@@ -133,8 +133,19 @@ export default function ProjectDetailPage({
   const { id } = use(params);
   const router = useRouter();
 
-  // Active top-level view: default is settings, or deployment, files, memory
-  const [activeTab, setActiveTab] = useState<"settings" | "deployment" | "files" | "memory">("settings");
+  // Active top-level view: default is settings, or deployment, files, memory, security
+  const [activeTab, setActiveTab] = useState<"settings" | "deployment" | "files" | "memory" | "security">("settings");
+
+  // Security audit state
+  const [securityScans, setSecurityScans] = useState<any[]>([]);
+  const [securityRules, setSecurityRules] = useState<any[]>([]);
+  const [loadingSecurity, setLoadingSecurity] = useState(false);
+  const [scanningSecurity, setScanningSecurity] = useState(false);
+  const [overrideAck, setOverrideAck] = useState(false);
+  const [overrideSubmitting, setOverrideSubmitting] = useState(false);
+  const [overrideSuccess, setOverrideSuccess] = useState(false);
+  const [overrideError, setOverrideError] = useState("");
+  const [selectedAuditLog, setSelectedAuditLog] = useState<string | null>(null);
 
   // Active section inside Settings & Overview anchor sidebar
   const [activeSection, setActiveSection] = useState<"general" | "services" | "domain" | "env" | "danger">("general");
@@ -305,6 +316,91 @@ export default function ProjectDetailPage({
       fetchFiles();
     }
   }, [activeTab, filesLoaded, fetchFiles]);
+
+  // Fetch security audit data when switching to Security tab
+  const fetchSecurityData = useCallback(async () => {
+    if (!id) return;
+    setLoadingSecurity(true);
+    try {
+      const [scansRes, rulesRes] = await Promise.all([
+        fetch(`/api/security/scans?projectId=${id}`),
+        fetch("/api/security/rules"),
+      ]);
+      if (scansRes.ok) {
+        const data = await scansRes.json();
+        setSecurityScans(data.scans || []);
+      }
+      if (rulesRes.ok) {
+        const data = await rulesRes.json();
+        setSecurityRules(data.rules || []);
+      }
+    } catch { /* silent */ }
+    finally { setLoadingSecurity(false); }
+  }, [id]);
+
+  useEffect(() => {
+    if (activeTab === "security") {
+      fetchSecurityData();
+    }
+  }, [activeTab, fetchSecurityData]);
+
+  const handleRunProjectScan = async () => {
+    if (!project) return;
+    setScanningSecurity(true);
+    try {
+      const res = await fetch("/api/security/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: project.id,
+          projectName: project.name,
+          projectPath: project.projectPath,
+          trigger: "manual",
+        }),
+      });
+      if (res.ok) {
+        fetchSecurityData();
+      }
+    } catch { /* silent */ }
+    finally {
+      setScanningSecurity(false);
+    }
+  };
+
+  const handleAuthorizeProjectOverride = async (pipelineRunId: string, pipelineId?: string, scanId?: string) => {
+    if (!overrideAck) return;
+    setOverrideSubmitting(true);
+    setOverrideError("");
+    try {
+      const res = await fetch("/api/security/override", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pipelineRunId,
+          pipelineId,
+          scanId,
+          acknowledgedRisk: true,
+          consentDeploy: true,
+        }),
+      });
+      if (res.ok) {
+        setOverrideSuccess(true);
+        setTimeout(() => {
+          setOverrideSuccess(false);
+          setOverrideAck(false);
+          fetchProjectDetails();
+          fetchSecurityData();
+        }, 2000);
+      } else {
+        const err = await res.json();
+        setOverrideError(err.error || "Failed to authorize override");
+      }
+    } catch (e: any) {
+      setOverrideError(e.message || "Failed to authorize override");
+    } finally {
+      setOverrideSubmitting(false);
+    }
+  };
 
   // Fetch content when selected file changes in Files view
   useEffect(() => {
@@ -740,6 +836,22 @@ export default function ProjectDetailPage({
               <line x1="12" y1="22.08" x2="12" y2="12" />
             </svg>
             <span>Deployment</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("security")}
+            className={`relative h-full px-4 text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${activeTab === "security"
+              ? "text-white after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-white after:shadow-[0_0_10px_rgba(255,255,255,0.8),0_0_20px_rgba(255,255,255,0.4)]"
+              : "text-white/40 hover:text-white/70 hover:bg-white/[0.02]"
+              }`}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            <span>Security</span>
+            {securityScans[0]?.status === "danger" && (
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+            )}
           </button>
         </div>
       </div>
@@ -1711,6 +1823,289 @@ export default function ProjectDetailPage({
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 5: SECURITY AUDIT & GUARDRAILS VIEW */}
+        {activeTab === "security" && (
+          <div className="flex-1 overflow-y-auto p-6 bg-[#060606]">
+            <div className="max-w-4xl mx-auto flex flex-col gap-6">
+              {/* Top Security Status Header */}
+              {(() => {
+                const latestScan = securityScans[0];
+                const blockedRun = pipeline?.runs?.find((r) => r.status === "blocked_danger");
+
+                let findingsList: any[] = [];
+                try {
+                  if (latestScan?.findings) findingsList = JSON.parse(latestScan.findings);
+                } catch { /* silent */ }
+
+                return (
+                  <>
+                    {/* DUAL-CONSENT OVERRIDE CARD (If pipeline is blocked on danger) */}
+                    {blockedRun && (
+                      <div className="rounded-2xl border border-red-500/30 bg-red-500/[0.06] p-6 shadow-xl">
+                        <div className="flex items-start gap-4">
+                          <div className="p-3 rounded-xl bg-red-500/15 text-red-400 shrink-0">
+                            <Icon icon="lucide:alert-octagon" className="w-6 h-6" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="text-base font-bold text-white">CI/CD Deployment Blocked by Security Guardrail</h3>
+                              <span className="text-[10px] uppercase font-bold font-mono tracking-wider px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30">
+                                Danger Severity
+                              </span>
+                            </div>
+                            <p className="text-xs text-white/70 mt-1 leading-relaxed">
+                              The pre-deployment security scan detected critical danger-level vulnerabilities on commit{" "}
+                              <span className="font-mono text-white font-semibold">({blockedRun.commitHash?.slice(0, 7)})</span>.
+                              Public deployment has been halted. Two-step confirmation consent is required to authorize override.
+                            </p>
+
+                            {overrideError && <div className="text-xs text-red-400 font-semibold mt-2">{overrideError}</div>}
+                            {overrideSuccess ? (
+                              <div className="text-xs text-emerald-400 font-semibold mt-3 flex items-center gap-1.5">
+                                <Icon icon="lucide:check-circle" className="w-4 h-4" />
+                                Dual consent verified! Override authorized and deployment initiated.
+                              </div>
+                            ) : (
+                              <div className="mt-4 p-4 rounded-xl bg-[#080808] border border-white/[0.08] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                <label className="flex items-center gap-2.5 text-xs text-white/80 cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={overrideAck}
+                                    onChange={(e) => setOverrideAck(e.target.checked)}
+                                    className="rounded bg-[#181818] border-white/20 text-red-500 focus:ring-red-500 w-4 h-4 cursor-pointer"
+                                  />
+                                  <span className="font-medium">
+                                    I acknowledge the identified danger-level findings and consent to deploy
+                                  </span>
+                                </label>
+
+                                <button
+                                  onClick={() => handleAuthorizeProjectOverride(blockedRun.id, pipeline?.id, latestScan?.id)}
+                                  disabled={!overrideAck || overrideSubmitting}
+                                  className="ray-btn-primary px-4 py-2 text-xs font-bold shrink-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                                >
+                                  {overrideSubmitting ? <SpinIcon size={14} /> : <Icon icon="lucide:unlock" className="w-4 h-4" />}
+                                  <span>Confirm & Force Deploy</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Overall Project Posture Banner */}
+                    <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-6 shadow-lg">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <h2 className="font-sans font-bold text-xl text-white tracking-tight">Security Posture</h2>
+                            {latestScan ? (
+                              latestScan.status === "danger" ? (
+                                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded uppercase font-mono bg-red-500/10 text-red-400 border border-red-500/20 flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                                  Danger ({latestScan.dangerCount} Critical)
+                                </span>
+                              ) : latestScan.status === "warning" ? (
+                                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded uppercase font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                                  Warning ({latestScan.warnCount} Attention)
+                                </span>
+                              ) : (
+                                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded uppercase font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                  Clean (Passing)
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded uppercase font-mono bg-white/[0.04] text-white/40 border border-white/[0.08]">
+                                Unscanned
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-white/40 mt-1">
+                            {latestScan
+                              ? `Last audited: ${new Date(latestScan.createdAt).toLocaleString()} (${latestScan.trigger.replace(/_/g, " ")})`
+                              : "No security audits conducted on this project yet."}
+                          </p>
+                        </div>
+
+                        <button
+                          onClick={handleRunProjectScan}
+                          disabled={scanningSecurity}
+                          className="ray-btn-primary px-4 py-2 text-xs cursor-pointer shrink-0"
+                        >
+                          {scanningSecurity ? (
+                            <>
+                              <SpinIcon size={14} />
+                              <span>Running Audit…</span>
+                            </>
+                          ) : (
+                            <>
+                              <Icon icon="lucide:shield-check" className="w-4 h-4" />
+                              <span>Run Security Audit</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Counts breakdown */}
+                      {latestScan && (
+                        <div className="grid grid-cols-3 gap-3 mt-6 pt-5 border-t border-white/[0.06]">
+                          <div className="p-3.5 rounded-xl bg-red-500/[0.06] border border-red-500/20">
+                            <span className="text-[11px] font-medium text-red-400 block">Danger CVEs</span>
+                            <span className="text-xl font-bold text-red-400 mt-0.5 block font-mono">{latestScan.dangerCount}</span>
+                          </div>
+                          <div className="p-3.5 rounded-xl bg-amber-500/[0.06] border border-amber-500/20">
+                            <span className="text-[11px] font-medium text-amber-400 block">Warnings</span>
+                            <span className="text-xl font-bold text-amber-400 mt-0.5 block font-mono">{latestScan.warnCount}</span>
+                          </div>
+                          <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+                            <span className="text-[11px] font-medium text-white/50 block">Info & Best Practice</span>
+                            <span className="text-xl font-bold text-white/80 mt-0.5 block font-mono">{latestScan.infoCount}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Predefined Rules & Known CVEs Checklist */}
+                    <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-6 shadow-lg">
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
+                        <Icon icon="lucide:check-square" className="w-4 h-4 text-emerald-400" />
+                        <span>Predefined Rules & Known CVE Checklist</span>
+                      </h3>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {securityRules.map((rule) => {
+                          const isFailed = findingsList.some((f) => f.ruleId === rule.id && f.severity === "danger");
+                          const isWarn = findingsList.some((f) => f.ruleId === rule.id && f.severity === "warning");
+
+                          return (
+                            <div
+                              key={rule.id}
+                              className={`p-3.5 rounded-xl border text-xs flex items-start justify-between gap-3 ${
+                                isFailed
+                                  ? "bg-red-500/[0.06] border-red-500/25 text-red-200"
+                                  : isWarn
+                                  ? "bg-amber-500/[0.06] border-amber-500/25 text-amber-200"
+                                  : "bg-white/[0.02] border-white/[0.06] text-white/70"
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold truncate text-white">{rule.title}</span>
+                                  {rule.cve && (
+                                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+                                      {rule.cve}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-white/40 mt-1 line-clamp-2">{rule.checklist}</p>
+                              </div>
+
+                              <span
+                                className={`text-[10px] font-bold uppercase font-mono px-2 py-0.5 rounded shrink-0 ${
+                                  isFailed
+                                    ? "bg-red-500/20 text-red-300"
+                                    : isWarn
+                                    ? "bg-amber-500/20 text-amber-300"
+                                    : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                }`}
+                              >
+                                {isFailed ? "Fail" : isWarn ? "Warn" : "Pass"}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Findings List */}
+                    {findingsList.length > 0 && (
+                      <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-6 shadow-lg">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
+                          <Icon icon="lucide:alert-circle" className="w-4 h-4 text-amber-400" />
+                          <span>Detected Vulnerabilities ({findingsList.length})</span>
+                        </h3>
+
+                        <div className="space-y-3">
+                          {findingsList.map((f: any, idx: number) => (
+                            <div
+                              key={f.id || idx}
+                              className={`p-4 rounded-xl border ${
+                                f.severity === "danger"
+                                  ? "bg-red-500/[0.06] border-red-500/30"
+                                  : f.severity === "warning"
+                                  ? "bg-amber-500/[0.06] border-amber-500/30"
+                                  : "bg-white/[0.02] border-white/[0.06]"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span
+                                      className={`text-[10px] font-bold uppercase font-mono px-2 py-0.5 rounded ${
+                                        f.severity === "danger"
+                                          ? "bg-red-500/20 text-red-300"
+                                          : f.severity === "warning"
+                                          ? "bg-amber-500/20 text-amber-300"
+                                          : "bg-white/[0.06] text-white/60"
+                                      }`}
+                                    >
+                                      {f.severity}
+                                    </span>
+                                    {f.cve && (
+                                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+                                        {f.cve}
+                                      </span>
+                                    )}
+                                    <h4 className="text-xs font-bold text-white">{f.title}</h4>
+                                  </div>
+                                </div>
+
+                                {f.file && (
+                                  <span className="text-[11px] font-mono text-white/40 bg-white/[0.04] px-2 py-0.5 rounded border border-white/[0.06]">
+                                    {f.file}
+                                    {f.line ? `:${f.line}` : ""}
+                                  </span>
+                                )}
+                              </div>
+
+                              <p className="text-xs text-white/70 mt-2 leading-relaxed">{f.description}</p>
+
+                              {f.recommendation && (
+                                <div className="mt-3 p-3 rounded-xl bg-[#060606] border border-white/[0.06] text-xs">
+                                  <span className="text-emerald-400 font-semibold block mb-0.5">Remediation:</span>
+                                  <code className="text-white/80 font-mono text-[11px] block whitespace-pre-wrap">{f.recommendation}</code>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Scan Audit Logs */}
+                    {latestScan?.logs && (
+                      <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-6 shadow-lg">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                            <Icon icon="lucide:terminal" className="w-4 h-4 text-white/40" />
+                            <span>Security Execution Logs</span>
+                          </h3>
+                        </div>
+                        <pre className="p-4 rounded-xl bg-[#050505] border border-white/[0.06] font-mono text-xs text-white/70 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                          {latestScan.logs}
+                        </pre>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}

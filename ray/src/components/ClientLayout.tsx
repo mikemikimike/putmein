@@ -111,6 +111,9 @@ interface ActiveDeployment {
   port?: number;
   buildLogs: string;
   updatedAt: number;
+  currentStage?: string;
+  stageIndex?: number;
+  totalStages?: number;
 }
 
 function LiveDeploymentWidget({
@@ -214,7 +217,11 @@ function LiveDeploymentWidget({
                     </span>
                   </div>
                   <p className="text-[11px] font-medium text-white/50 mt-0.5 truncate">
-                    {isBuilding ? "Compiling Docker image & dependencies..." : isSuccess ? "Container healthy & live" : "Container build or launch failed"}
+                    {isBuilding
+                      ? (deployment.currentStage ? `Stage ${deployment.stageIndex || 1}/${deployment.totalStages || 6}: ${deployment.currentStage}` : "Compiling Docker image & dependencies...")
+                      : isSuccess
+                      ? "Container healthy & live"
+                      : (deployment.failureReason || "Container build or launch failed")}
                   </p>
                 </div>
               </div>
@@ -303,7 +310,13 @@ function LiveDeploymentWidget({
                 ) : (
                   <span className={`w-2 h-2 rounded-full ${isSuccess ? "bg-emerald-400" : "bg-red-400"}`} />
                 )}
-                <span>{isBuilding ? "Stage 3/6: Docker Build & Spec" : isSuccess ? "All 6 Pipeline Stages Completed" : "Pipeline Stopped on Error"}</span>
+                <span>
+                  {isBuilding
+                    ? `Stage ${deployment.stageIndex || 1}/${deployment.totalStages || 6}: ${deployment.currentStage || "In Progress"}`
+                    : isSuccess
+                    ? `All ${deployment.totalStages || 6} Pipeline Stages Completed`
+                    : (deployment.failureReason ? `Halted: ${deployment.failureReason.slice(0, 35)}` : "Pipeline Stopped on Error")}
+                </span>
               </div>
               <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider">Live Logs</span>
             </div>
@@ -323,7 +336,13 @@ function LiveDeploymentWidget({
                 ) : (
                   <span className={`w-1.5 h-1.5 rounded-full ${isSuccess ? "bg-emerald-400" : "bg-red-400"}`} />
                 )}
-                <span>{isBuilding ? "Streaming active deployment telemetry" : isSuccess ? "Deployment online" : "Failure preserved for diagnosis"}</span>
+                <span>
+                  {isBuilding
+                    ? (deployment.currentStage ? `Executing ${deployment.currentStage}...` : "Streaming active deployment telemetry")
+                    : isSuccess
+                    ? "Deployment online & healthy"
+                    : "Failure preserved for diagnosis"}
+                </span>
               </div>
               <button
                 onClick={onDismiss}
@@ -379,19 +398,19 @@ function LiveDeploymentWidget({
               <span
                 className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider flex-shrink-0 ${
                   isBuilding
-                    ? "bg-white/10 text-white border border-white/20"
+                    ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
                     : isSuccess
                     ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                     : "bg-red-500/15 text-red-400 border border-red-500/30"
                 }`}
               >
-                {isBuilding ? "Deploying" : isSuccess ? "Healthy" : "Failed"}
+                {isBuilding ? "Building" : isSuccess ? "Healthy" : "Failed"}
               </span>
             </div>
 
             <span className="text-[11px] font-medium text-white/50 truncate max-w-[210px] mt-0.5">
               {isBuilding
-                ? "Compiling image & dependencies..."
+                ? (deployment.currentStage ? `Stage ${deployment.stageIndex || 1}/${deployment.totalStages || 6}: ${deployment.currentStage}...` : "Compiling image & dependencies...")
                 : isSuccess
                 ? `Online on port :${deployment.port || 3000}`
                 : (deployment.failureReason || "Build halted on error · Click for AI Troubleshooter")}

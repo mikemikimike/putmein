@@ -249,7 +249,25 @@ AGENT_AUTONOMOUS="false"
 Write-Step "6/6" "Installing PutmeIn Engine & Starting Services..."
 
 Write-Color "  Installing PutmeIn package from NPM..." Cyan
-npm install -g putmein-test@latest --force
+$npmInstalled = $false
+for ($attempt = 1; $attempt -le 3; $attempt++) {
+    & npm install -g putmein-test@latest --force
+    if ($LASTEXITCODE -eq 0) {
+        $npmInstalled = $true
+        break
+    }
+    if ($attempt -lt 3) {
+        Write-WarnMsg "NPM package replication or network sync in progress. Retrying in 4s (attempt $($attempt + 1)/3)..."
+        Start-Sleep -Seconds 4
+    }
+}
+
+if ($npmInstalled) {
+    Write-Success "PutmeIn CLI installed globally!"
+} else {
+    Write-ErrorMsg "Failed to install 'putmein-test' from NPM. Please verify your network connection."
+    exit 1
+}
 
 # Refresh environment PATH for current session
 $npmPrefix = (npm config get prefix 2>$null)

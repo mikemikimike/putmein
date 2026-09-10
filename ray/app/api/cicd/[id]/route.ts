@@ -140,8 +140,9 @@ export async function POST(
         commitMessage: "Manual pipeline execution triggered from dashboard",
         author: user.name || "User",
         stages: JSON.stringify([
-          { name: "Git Clone", status: "running", durationMs: 0 },
-          { name: "Dependency Setup", status: "pending", durationMs: 0 },
+          { name: "Git Clone & Sync", status: "running", durationMs: 0 },
+          { name: "Dependencies", status: "pending", durationMs: 0 },
+          { name: "Security Audit", status: "pending", durationMs: 0 },
           { name: "Docker Build", status: "pending", durationMs: 0 },
           { name: "Container Deploy", status: "pending", durationMs: 0 },
           { name: "Healthcheck", status: "pending", durationMs: 0 },
@@ -156,102 +157,16 @@ export async function POST(
       data: { status: "running", lastRunAt: new Date() },
     });
 
-    // Determine deployment directory
-    const path = await import("path");
-    const { getDeploymentsDir } = await import("@/lib/settings");
-    const baseDeployDir = await getDeploymentsDir();
-    const projectPath = path.join(baseDeployDir, pipeline.name);
-
-    // Trigger build in Brain and consume SSE stream asynchronously
-    (async () => {
-      try {
-        const bRes = await fetch(`${BRAIN_URL}/v1/deploy`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: user.userId,
-            name: pipeline.name,
-            projectPath,
-            repoUrl: pipeline.repoUrl,
-            branch: pipeline.branch,
-            hostPort: pipeline.port && pipeline.port !== 3000 && pipeline.port !== 3100 ? pipeline.port : undefined,
-          }),
-        });
-
-        if (!bRes.ok || !bRes.body) {
-          const errTxt = await bRes.text().catch(() => "Failed to connect to Brain deploy service");
-          await prisma.rayPipelineRun.update({
-            where: { id: run.id },
-            data: {
-              status: "failed",
-              logs: (run.logs || "") + `\n[ERROR] Pipeline failed: ${errTxt}`,
-            },
-          });
-          await prisma.rayPipeline.update({
-            where: { id },
-            data: { status: "failed" },
-          });
-          return;
-        }
-
-        let accumulatedLogs = run.logs || "";
-        const reader = bRes.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() || "";
-
-          for (const part of parts) {
-            for (const line of part.split("\n")) {
-              if (line.startsWith("data: ")) {
-                try {
-                  const ev = JSON.parse(line.slice(6));
-                  if (ev.logDelta) accumulatedLogs += ev.logDelta;
-                  else if (ev.message) accumulatedLogs += `[${(ev.step || "deploy").toUpperCase()}] ${ev.message}\n`;
-
-                  if (ev.step === "complete") {
-                    await prisma.rayPipelineRun.update({
-                      where: { id: run.id },
-                      data: { status: "success", logs: accumulatedLogs },
-                    });
-                    await prisma.rayPipeline.update({
-                      where: { id },
-                      data: { status: "success" },
-                    });
-                  } else if (ev.step === "failed" || ev.status === "error") {
-                    await prisma.rayPipelineRun.update({
-                      where: { id: run.id },
-                      data: { status: "failed", logs: accumulatedLogs || ev.message },
-                    });
-                    await prisma.rayPipeline.update({
-                      where: { id },
-                      data: { status: "failed" },
-                    });
-                  }
-                } catch { /* parse err */ }
-              }
-            }
-          }
-        }
-      } catch (err: unknown) {
-        await prisma.rayPipelineRun.update({
-          where: { id: run.id },
-          data: {
-            status: "failed",
-            logs: (run.logs || "") + `\n[ERROR] Pipeline run failed: ${err instanceof Error ? err.message : "Unknown error"}`,
-          },
-        }).catch(() => {});
-        await prisma.rayPipeline.update({
-          where: { id },
-          data: { status: "failed" },
-        }).catch(() => {});
-      }
-    })();
+    // Execute pipeline stages asynchronously via unified runner
+    const { executePipelineRun } = await import("@/lib/cicd-runner");
+    executePipelineRun({
+      pipelineId: id,
+      runId: run.id,
+      userId: user.userId,
+      overrideAuthor: user.name || undefined,
+    }).catch((err) => {
+      console.error("executePipelineRun error:", err);
+    });
 
     return NextResponse.json({ ok: true, run });
   } catch (err) {

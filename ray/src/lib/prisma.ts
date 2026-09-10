@@ -30,7 +30,7 @@ declare global {
 // Lazy-loading proxy to prevent build-time crashes in Next.js and guarantee persistent connection pool
 const prisma = new Proxy({} as ReturnType<typeof prismaClientSingleton>, {
   get: (target, prop) => {
-    if (!globalThis.prisma) {
+    if (!globalThis.prisma || (typeof prop === "string" && !(prop in globalThis.prisma) && prop.startsWith("ray"))) {
       globalThis.prisma = prismaClientSingleton();
     }
     return (globalThis.prisma as any)[prop];

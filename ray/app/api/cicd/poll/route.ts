@@ -85,13 +85,7 @@ export async function POST(req: NextRequest) {
         // If there's a new commit that hasn't been run yet, and no active run is already building:
         const isAlreadyRunning = pipe.runs[0]?.status === "running" && (Date.now() - new Date(pipe.runs[0].createdAt).getTime() < 90000);
         if (latestRemoteCommit && latestRemoteCommit !== lastRunCommit && latestRemoteCommit !== "push-tr" && !isAlreadyRunning) {
-          let commitMsg = `New commit ${latestRemoteCommit} on ${pipe.branch}`;
-          try {
-            await execFileAsync("git", ["-C", targetDir, "fetch", "origin", pipe.branch || "main"], { env: gitEnv, timeout: 10000 });
-            await execFileAsync("git", ["-C", targetDir, "reset", "--hard", `origin/${pipe.branch || "main"}`], { env: gitEnv, timeout: 5000 });
-            const { stdout: logOut } = await execFileAsync("git", ["-C", targetDir, "log", "-1", "--pretty=%B"], { env: gitEnv, timeout: 3000 });
-            if (logOut.trim()) commitMsg = logOut.trim();
-          } catch { /* proceed */ }
+          const commitMsg = `New commit ${latestRemoteCommit} on ${pipe.branch}`;
 
           // Create PipelineRun
           const newRun = await prisma.rayPipelineRun.create({
@@ -102,10 +96,14 @@ export async function POST(req: NextRequest) {
               author: "Git Auto-Sync",
               status: "running",
               stages: JSON.stringify([
-                { name: "Git Remote Detected", status: "success", durationMs: 100 },
-                { name: "Docker Build & Deploy", status: "running", durationMs: 0 },
+                { name: "Git Clone & Sync", status: "running", durationMs: 0 },
+                { name: "Dependencies", status: "pending", durationMs: 0 },
+                { name: "Security Audit", status: "pending", durationMs: 0 },
+                { name: "Docker Build", status: "pending", durationMs: 0 },
+                { name: "Container Deploy", status: "pending", durationMs: 0 },
+                { name: "Healthcheck", status: "pending", durationMs: 0 },
               ]),
-              logs: `Detected new commit on ${pipe.repoUrl} (${pipe.branch})\nCommit: ${latestRemoteCommit} - ${commitMsg}\nStarting container build...\n`,
+              logs: `Detected new commit on ${pipe.repoUrl} (${pipe.branch})\nCommit: ${latestRemoteCommit}\n`,
             },
           });
 
@@ -114,84 +112,16 @@ export async function POST(req: NextRequest) {
             data: { status: "running", lastRunAt: new Date() },
           });
 
-          // Trigger Brain deployment asynchronously and track stream to finalize status
-          (async () => {
-            try {
-              const res = await fetch(`${BRAIN_URL}/v1/deploy`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  userId: user.userId,
-                  name: pipe.name,
-                  projectPath: targetDir,
-                  sourceType: "github",
-                  repoUrl: pipe.repoUrl,
-                  branch: pipe.branch,
-                  port: pipe.port || 3000,
-                }),
-                signal: AbortSignal.timeout(120000),
-              });
-
-              if (!res.ok) {
-                const errTxt = await res.text().catch(() => "Deploy service error");
-                await prisma.rayPipelineRun.update({
-                  where: { id: newRun.id },
-                  data: {
-                    status: "failed",
-                    logs: `Deploy failed: ${errTxt}`,
-                  },
-                });
-                await prisma.rayPipeline.update({
-                  where: { id: pipe.id },
-                  data: { status: "failed" },
-                });
-                return;
-              }
-
-              // Read response stream to observe final outcome
-              const reader = res.body?.getReader();
-              if (reader) {
-                const decoder = new TextDecoder();
-                let accumulatedLogs = "";
-                let isSuccess = false;
-                let isError = false;
-
-                while (true) {
-                  const { done, value } = await reader.read();
-                  if (done) break;
-                  const chunk = decoder.decode(value, { stream: true });
-                  accumulatedLogs += chunk;
-                  if (chunk.includes('"step":"complete"')) isSuccess = true;
-                  if (chunk.includes('"status":"error"') || chunk.includes('"step":"failed"')) isError = true;
-                }
-
-                const finalStatus = isSuccess ? "success" : (isError ? "failed" : "success");
-                await prisma.rayPipelineRun.update({
-                  where: { id: newRun.id },
-                  data: {
-                    status: finalStatus,
-                    logs: accumulatedLogs.slice(0, 5000),
-                  },
-                });
-                await prisma.rayPipeline.update({
-                  where: { id: pipe.id },
-                  data: { status: finalStatus },
-                });
-              }
-            } catch (deployErr) {
-              await prisma.rayPipelineRun.update({
-                where: { id: newRun.id },
-                data: {
-                  status: "failed",
-                  logs: `Build failed: ${(deployErr as Error).message}`,
-                },
-              }).catch(() => {});
-              await prisma.rayPipeline.update({
-                where: { id: pipe.id },
-                data: { status: "failed" },
-              }).catch(() => {});
-            }
-          })();
+          // Trigger pipeline execution via unified runner
+          const { executePipelineRun } = await import("@/lib/cicd-runner");
+          executePipelineRun({
+            pipelineId: pipe.id,
+            runId: newRun.id,
+            userId: user.userId,
+            overrideAuthor: "Git Auto-Sync",
+          }).catch((deployErr) => {
+            console.error(`Poll auto-deploy error for ${pipe.name}:`, deployErr);
+          });
 
           triggered.push({ pipelineId: pipe.id, name: pipe.name, commitHash: latestRemoteCommit });
         }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// GET /api/github/app/manifest — generates Coolify-style GitHub App manifest
+// GET /api/github/app/manifest — generates GitHub App manifest
 export async function GET(req: NextRequest) {
   const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost:3000";
   const proto = req.headers.get("x-forwarded-proto") || (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");

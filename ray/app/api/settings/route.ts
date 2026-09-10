@@ -18,6 +18,7 @@ export async function GET() {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     let autonomous = false;
+    let securityChecksEnabled = true;
     let deploymentsPath = await getDeploymentsDir();
     const defaultDeploymentsPath = getDefaultDeploymentsDir();
     let apiKeys: Record<string, boolean> = {
@@ -35,6 +36,9 @@ export async function GET() {
       if (res.ok) {
         const data = await res.json();
         autonomous = data.autonomous ?? false;
+        if (typeof data.securityChecksEnabled === "boolean") {
+          securityChecksEnabled = data.securityChecksEnabled;
+        }
         if (data.deploymentsPath) deploymentsPath = data.deploymentsPath;
         if (data.apiKeys) apiKeys = data.apiKeys;
       }
@@ -44,6 +48,7 @@ export async function GET() {
 
     return NextResponse.json({
       autonomous,
+      securityChecksEnabled,
       deploymentsPath,
       defaultDeploymentsPath,
       platform: os.platform(),

@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { StateSpinner } from "./StateSpinner";
 
 const NAV_ITEMS = [
   {
@@ -56,6 +57,16 @@ const NAV_ITEMS = [
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10" />
         <polyline points="12 6 12 12 16 14" />
+      </svg>
+    ),
+  },
+  {
+    href: "/security",
+    label: "Security",
+    matchPrefix: "/security",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       </svg>
     ),
   },
@@ -196,6 +207,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: SidebarProp
   const [isChatHistoryFull, setIsChatHistoryFull] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Background chat run tracking
+  const [chatRuns, setChatRuns] = useState<Record<string, { status: "running" | "completed" | "error"; startedAt: number; completedAt?: number }>>({});
+  const [completedShowUntil, setCompletedShowUntil] = useState<Record<string, number>>({});
+
   const isOnChat = pathname.startsWith("/chat");
 
   const initials = user.name
@@ -283,6 +298,77 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: SidebarProp
     window.addEventListener("ray:session-created", handler);
     return () => window.removeEventListener("ray:session-created", handler);
   }, [fetchSessions]);
+
+  // Poll chat runner active status
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchChatStatus = async () => {
+      try {
+        const res = await fetch("/api/chat/status");
+        if (res.ok) {
+          const data = await res.json();
+          const runs = data.runs || {};
+          if (!isMounted) return;
+
+          setChatRuns((prevRuns) => {
+            const now = Date.now();
+            const newCompletedUntil: Record<string, number> = {};
+            let hasNewCompletions = false;
+
+            for (const [sid, run] of Object.entries(runs as Record<string, { status: string; startedAt: number; completedAt?: number }>)) {
+              const prev = prevRuns[sid];
+              if (run.status === "completed" && (prev?.status === "running" || (run.completedAt && now - run.completedAt < 6000))) {
+                newCompletedUntil[sid] = now + 5000;
+                hasNewCompletions = true;
+              }
+            }
+
+            if (hasNewCompletions) {
+              setCompletedShowUntil((prev) => ({ ...prev, ...newCompletedUntil }));
+              fetchSessions();
+            }
+
+            return runs;
+          });
+        }
+      } catch {
+        // silent
+      }
+    };
+
+    fetchChatStatus();
+    const interval = setInterval(fetchChatStatus, 2500);
+
+    const handleChatStatusEvent = () => fetchChatStatus();
+    window.addEventListener("ray:chat-status-change", handleChatStatusEvent);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      window.removeEventListener("ray:chat-status-change", handleChatStatusEvent);
+    };
+  }, [fetchSessions]);
+
+  // Clear expired checkmarks
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setCompletedShowUntil((prev) => {
+        let hasExpired = false;
+        const next: Record<string, number> = {};
+        for (const [sid, until] of Object.entries(prev)) {
+          if (now < until) {
+            next[sid] = until;
+          } else {
+            hasExpired = true;
+          }
+        }
+        return hasExpired ? next : prev;
+      });
+    }, 500);
+    return () => clearInterval(timer);
+  }, []);
 
   // Poll monitor alert count for sidebar badge
   useEffect(() => {
@@ -628,6 +714,20 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: SidebarProp
               >
                 {item.icon}
 
+                {/* Chat running indicator in collapsed mode */}
+                {item.href === "/chat" && Object.values(chatRuns).some((r) => r.status === "running") && (
+                  <span className="absolute top-1.5 right-1.5 flex items-center justify-center">
+                    <StateSpinner size="xs" color="emerald" />
+                  </span>
+                )}
+                {item.href === "/chat" && !Object.values(chatRuns).some((r) => r.status === "running") && Object.keys(completedShowUntil).length > 0 && (
+                  <span className="absolute top-1.5 right-1.5 w-3.5 h-3.5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center animate-fade-in">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </span>
+                )}
+
                 {/* Monitor alert pip in collapsed mode */}
                 {isMonitor && monitorAlertCount > 0 && (
                   <span
@@ -694,6 +794,19 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: SidebarProp
             >
               {item.icon}
               <span className="truncate">{item.label}</span>
+              {/* Chat running / completed indicator in expanded mode */}
+              {item.href === "/chat" && Object.values(chatRuns).some((r) => r.status === "running") && (
+                <span className="ml-auto flex items-center justify-center shrink-0" title="Chat generating response in background...">
+                  <StateSpinner size="xs" color="emerald" />
+                </span>
+              )}
+              {item.href === "/chat" && !Object.values(chatRuns).some((r) => r.status === "running") && Object.keys(completedShowUntil).length > 0 && (
+                <span className="ml-auto flex items-center justify-center shrink-0 text-emerald-400 animate-fade-in" title="Chat completed">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </span>
+              )}
               {/* Monitor alert badge */}
               {isMonitor && monitorAlertCount > 0 && (
                 <span
@@ -980,6 +1093,18 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: SidebarProp
                                 <span className="flex-1 min-w-0 text-[13.5px] text-white/80 truncate leading-snug">
                                   {session.title}
                                 </span>
+                                {chatRuns[session.id]?.status === "running" && (
+                                  <div className="flex items-center shrink-0 ml-1.5" title="Generating response in background...">
+                                    <StateSpinner size="xs" color="emerald" />
+                                  </div>
+                                )}
+                                {completedShowUntil[session.id] && Date.now() < completedShowUntil[session.id] && chatRuns[session.id]?.status !== "running" && (
+                                  <div className="flex items-center shrink-0 ml-1.5 text-emerald-400 animate-fade-in" title="Response completed">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                      <polyline points="20 6 9 17 4 12" />
+                                    </svg>
+                                  </div>
+                                )}
                               </div>
                             );
                           }
@@ -1037,6 +1162,22 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: SidebarProp
                                 >
                                   {session.title}
                                 </span>
+                              )}
+
+                              {/* Running background loader */}
+                              {chatRuns[session.id]?.status === "running" && (
+                                <div className="flex items-center shrink-0 ml-1.5" title="Generating response in background...">
+                                  <StateSpinner size="xs" color="emerald" />
+                                </div>
+                              )}
+
+                              {/* Completed green checkmark (shown for 5 seconds) */}
+                              {completedShowUntil[session.id] && Date.now() < completedShowUntil[session.id] && chatRuns[session.id]?.status !== "running" && (
+                                <div className="flex items-center shrink-0 ml-1.5 text-emerald-400 animate-fade-in" title="Response completed">
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="20 6 9 17 4 12" />
+                                  </svg>
+                                </div>
                               )}
 
                               {!editingSessionId && (

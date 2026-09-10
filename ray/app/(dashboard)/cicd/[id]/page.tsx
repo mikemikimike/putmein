@@ -16,6 +16,7 @@ interface PipelineStage {
 const PIPELINE_STAGES: PipelineStage[] = [
   { id: "clone", name: "Git Clone", desc: "Checkout branch & commit", icon: "lucide:git-pull-request" },
   { id: "deps", name: "Dependencies", desc: "Resolve packages & locks", icon: "lucide:package" },
+  { id: "security", name: "Security Audit", desc: "Pre-deployment CVE & vulnerability scan", icon: "lucide:shield-check" },
   { id: "build", name: "Docker Build", desc: "Compile container image", icon: "logos:docker-icon" },
   { id: "deploy", name: "Container Deploy", desc: "Launch running instance", icon: "lucide:server" },
   { id: "health", name: "Healthcheck", desc: "Verify live endpoint", icon: "lucide:check-circle-2" },
@@ -43,6 +44,11 @@ export default function CicdDetailPage({
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [diagnoseRun, setDiagnoseRun] = useState<any>(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+  // Dual Consent Override state
+  const [overrideAckRisk, setOverrideAckRisk] = useState(false);
+  const [overrideSubmitting, setOverrideSubmitting] = useState(false);
+  const [overrideError, setOverrideError] = useState<string | null>(null);
 
   // Settings form states
   const [editBranch, setEditBranch] = useState("");
@@ -84,6 +90,35 @@ export default function CicdDetailPage({
     } catch { /* silent */ }
     finally {
       setTriggering(false);
+    }
+  };
+
+  const handleOverrideDeploy = async () => {
+    if (!overrideAckRisk || overrideSubmitting) return;
+    setOverrideSubmitting(true);
+    setOverrideError(null);
+    try {
+      const res = await fetch("/api/security/override", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pipelineRunId: latestRun?.id,
+          pipelineId: pipeline?.id,
+          acknowledgedRisk: true,
+          consentDeploy: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setOverrideError(data.error || "Failed to authorize deployment override");
+      } else {
+        setOverrideAckRisk(false);
+        fetchPipeline();
+      }
+    } catch (err: unknown) {
+      setOverrideError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setOverrideSubmitting(false);
     }
   };
 
@@ -144,9 +179,20 @@ export default function CicdDetailPage({
   }
 
   const latestRun = pipeline?.runs?.[0];
-  const isRunning = pipeline?.status === "running";
-  const isSuccess = pipeline?.status === "success";
-  const isFailed = pipeline?.status === "failed";
+  let stagesRunning = false;
+  try {
+    if (latestRun?.stages) {
+      const parsed = JSON.parse(latestRun.stages);
+      if (Array.isArray(parsed)) {
+        stagesRunning = parsed.some((s: any) => s.status === "running" || s.status === "building");
+      }
+    }
+  } catch { /* silent */ }
+
+  const isBlockedDanger = pipeline?.status === "blocked_danger" || latestRun?.status === "blocked_danger";
+  const isRunning = pipeline?.status === "running" || latestRun?.status === "running" || stagesRunning;
+  const isSuccess = !isRunning && !isBlockedDanger && (latestRun ? (latestRun.status === "success" && !stagesRunning) : pipeline?.status === "success");
+  const isFailed = !isRunning && !isBlockedDanger && (latestRun ? latestRun.status === "failed" : pipeline?.status === "failed");
   const effectiveAppUrl = pipeline?.deployment?.deployUrl || (pipeline?.port ? `http://localhost:${pipeline.port}` : null);
 
   return (
@@ -194,7 +240,12 @@ export default function CicdDetailPage({
               )}
 
               {/* 3. Pipeline status badge (Third, without dots) */}
-              {isSuccess ? (
+              {isBlockedDanger ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-rose-500/[0.15] border border-rose-500/30 text-[10.5px] font-mono text-rose-300">
+                  <Icon icon="lucide:shield-alert" width={12} height={12} className="text-rose-400" />
+                  <span>blocked: danger</span>
+                </span>
+              ) : isSuccess ? (
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-emerald-500/[0.1] border border-emerald-500/25 text-[10.5px] font-mono text-emerald-300">
                   <Icon icon="lucide:check-circle-2" width={11} height={11} className="text-emerald-400" />
                   <span>success</span>
@@ -289,6 +340,88 @@ export default function CicdDetailPage({
         </div>
       </div>
 
+      {/* Dual Consent Deployment Override Card (Shown when pipeline is blocked by danger findings) */}
+      {isBlockedDanger && (
+        <div className="rounded-2xl p-6 bg-gradient-to-b from-rose-950/20 to-black/40 border border-rose-500/30 shadow-lg shadow-rose-950/20 mb-6">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0 mt-0.5">
+              <Icon icon="lucide:shield-alert" width={22} height={22} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <h3 className="font-sans font-bold text-base text-white">
+                  Deployment Blocked: Critical Security Vulnerability
+                </h3>
+                <span className="text-[10.5px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold uppercase">
+                  Danger Level
+                </span>
+              </div>
+              <p className="text-xs text-white/70 leading-relaxed mb-4">
+                The pre-deployment Security Audit identified critical vulnerabilities (known CVEs or exposed sensitive secrets). Automatic deployment was automatically stopped to prevent security compromise. To deploy anyway, explicit dual confirmation consent is required by protocol.
+              </p>
+
+              {overrideError && (
+                <div className="mb-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-300 flex items-center gap-2">
+                  <Icon icon="lucide:alert-circle" width={14} height={14} className="shrink-0" />
+                  <span>{overrideError}</span>
+                </div>
+              )}
+
+              {/* Dual-Consent Form */}
+              <div className="p-4 rounded-xl bg-black/40 border border-white/[0.08] flex flex-col md:flex-row md:items-center justify-between gap-4">
+                {/* Confirmation 1: Risk Acknowledgment Checkbox */}
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    id="overrideAckRiskCheckbox"
+                    checked={overrideAckRisk}
+                    onChange={(e) => setOverrideAckRisk(e.target.checked)}
+                    className="mt-0.5 rounded bg-[#181818] border-white/20 text-rose-500 focus:ring-rose-500 cursor-pointer"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold text-white block">
+                      Confirmation 1 of 2: Acknowledge Security Risk
+                    </span>
+                    <span className="text-white/50 text-[11px]">
+                      I understand the DANGER severity findings and authorize deployment knowing the risk of exploitation.
+                    </span>
+                  </div>
+                </label>
+
+                {/* Confirmation 2: Force Deploy Button */}
+                <div className="flex items-center gap-3 shrink-0">
+                  <Link
+                    href={`/projects/${pipeline?.projectId || pipeline?.id}?tab=security`}
+                    className="px-3 py-2 rounded-xl text-xs font-semibold bg-white/[0.04] hover:bg-white/10 text-white/70 hover:text-white border border-white/[0.08] transition-all flex items-center gap-1.5"
+                  >
+                    <Icon icon="lucide:file-text" width={13} height={13} />
+                    <span>Review Audit Logs</span>
+                  </Link>
+
+                  <button
+                    onClick={handleOverrideDeploy}
+                    disabled={!overrideAckRisk || overrideSubmitting}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 active:scale-95 text-white transition-all shadow-md shadow-rose-950/40 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer"
+                  >
+                    {overrideSubmitting ? (
+                      <>
+                        <SpinIcon size={12} />
+                        <span>Authorizing Deploy…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Icon icon="lucide:alert-triangle" width={13} height={13} />
+                        <span>Confirmation 2: Authorize & Force Deploy</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Visual Pipeline DAG Stage Workflow Tracker */}
       <div className="rounded-2xl p-6 bg-[#0c0c0c] border border-white/[0.08] shadow-sm mb-6">
         <div className="flex items-center justify-between gap-4 mb-5">
@@ -297,18 +430,50 @@ export default function CicdDetailPage({
             <p className="text-xs text-white/40 mt-0.5">Automated compilation, containerization, and deployment stages</p>
           </div>
           <span className="text-[11px] font-mono font-semibold text-white/40 px-2.5 py-1 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-            {isRunning ? "Pipeline Active" : isSuccess ? "All 5 Stages Passed" : isFailed ? "Halted on Error" : "Standby"}
+            {isBlockedDanger ? "Blocked on Security Danger" : isRunning ? "Pipeline Active" : isSuccess ? "All 6 Stages Passed" : isFailed ? "Halted on Error" : "Standby"}
           </span>
         </div>
 
-        {/* 5 Stage Connected Flow */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3 relative">
+        {/* 6 Stage Connected Flow */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 relative">
           {PIPELINE_STAGES.map((st, idx) => {
-            // Stage state logic
-            let stageState: "success" | "running" | "failed" | "idle" = "idle";
-            if (isSuccess) stageState = "success";
-            else if (isFailed) stageState = idx === 2 ? "failed" : idx < 2 ? "success" : "idle";
-            else if (isRunning) stageState = idx === 2 ? "running" : idx < 2 ? "success" : "idle";
+            // Parse run stages if available
+            let parsedStages: any[] = [];
+            try {
+              if (latestRun?.stages) parsedStages = JSON.parse(latestRun.stages);
+            } catch { /* fallback */ }
+
+            let stageState: "success" | "running" | "failed" | "blocked" | "idle" = "idle";
+            const stageObj = parsedStages.find((s: any) =>
+              s.name?.toLowerCase().includes(st.name.toLowerCase().split(" ")[0]) ||
+              s.id === st.id
+            );
+
+            if (stageObj) {
+              if (stageObj.status === "success" || stageObj.status === "passed" || stageObj.status === "overridden") {
+                stageState = "success";
+              } else if (stageObj.status === "running") {
+                stageState = "running";
+              } else if (stageObj.status === "blocked_danger" || stageObj.status === "blocked") {
+                stageState = "blocked";
+              } else if (stageObj.status === "failed") {
+                stageState = "failed";
+              } else {
+                stageState = "idle";
+              }
+            } else {
+              if (isSuccess) {
+                stageState = "success";
+              } else if (isBlockedDanger) {
+                if (idx < 2) stageState = "success";
+                else if (idx === 2) stageState = "blocked";
+                else stageState = "idle";
+              } else if (isFailed) {
+                stageState = idx === 3 ? "failed" : idx < 3 ? "success" : "idle";
+              } else if (isRunning) {
+                stageState = idx === 3 ? "running" : idx < 3 ? "success" : "idle";
+              }
+            }
 
             return (
               <div
@@ -316,7 +481,9 @@ export default function CicdDetailPage({
                 className="relative rounded-2xl p-4 bg-[#111111] border transition-all flex flex-col justify-between"
                 style={{
                   borderColor:
-                    stageState === "running"
+                    stageState === "blocked"
+                      ? "rgba(244,63,94,0.6)"
+                      : stageState === "running"
                       ? "rgba(56,189,248,0.4)"
                       : stageState === "success"
                       ? "rgba(34,197,94,0.3)"
@@ -324,7 +491,9 @@ export default function CicdDetailPage({
                       ? "rgba(239,68,68,0.4)"
                       : "rgba(255,255,255,0.06)",
                   boxShadow:
-                    stageState === "running"
+                    stageState === "blocked"
+                      ? "0 0 25px rgba(244,63,94,0.2)"
+                      : stageState === "running"
                       ? "0 0 20px rgba(56,189,248,0.15)"
                       : stageState === "success"
                       ? "0 0 15px rgba(34,197,94,0.08)"
@@ -336,7 +505,9 @@ export default function CicdDetailPage({
                     <span className="text-[10px] font-mono font-bold text-white/30">0{idx + 1}</span>
                     <div
                       className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs ${
-                        stageState === "running"
+                        stageState === "blocked"
+                          ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse"
+                          : stageState === "running"
                           ? "bg-sky-500/20 text-sky-300 border border-sky-500/40 animate-pulse"
                           : stageState === "success"
                           ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
@@ -345,7 +516,9 @@ export default function CicdDetailPage({
                           : "bg-white/[0.04] text-white/40 border border-white/[0.08]"
                       }`}
                     >
-                      {stageState === "running" ? (
+                      {stageState === "blocked" ? (
+                        <Icon icon="lucide:shield-alert" width={13} height={13} />
+                      ) : stageState === "running" ? (
                         <SpinIcon size={12} />
                       ) : stageState === "success" ? (
                         <Icon icon="lucide:check" width={13} height={13} />
@@ -363,8 +536,10 @@ export default function CicdDetailPage({
 
                 <div className="mt-4 pt-2.5 border-t border-white/[0.04] flex items-center justify-between text-[10px] font-mono">
                   <span
-                    className={`font-semibold capitalize ${
-                      stageState === "running"
+                    className={`font-semibold uppercase tracking-wider ${
+                      stageState === "blocked"
+                        ? "text-rose-400 font-bold"
+                        : stageState === "running"
                         ? "text-sky-400"
                         : stageState === "success"
                         ? "text-emerald-400"
@@ -373,9 +548,9 @@ export default function CicdDetailPage({
                         : "text-white/30"
                     }`}
                   >
-                    {stageState === "running" ? "Building…" : stageState}
+                    {stageState === "blocked" ? "BLOCKED: DANGER" : stageState === "running" ? "Building…" : stageState}
                   </span>
-                  <span className="text-white/20">Stage {idx + 1}/5</span>
+                  <span className="text-white/20">Stage {idx + 1}/6</span>
                 </div>
               </div>
             );

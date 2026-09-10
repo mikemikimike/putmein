@@ -17,6 +17,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     let {
+      id: depId,
       userId,
       projectId,
       name,
@@ -30,6 +31,10 @@ export async function POST(req: NextRequest) {
       status = "healthy",
       buildLogs = "",
       sourceType = "local",
+      repoUrl,
+      branch,
+      commitHash,
+      commitMessage,
     } = body;
 
     if (!name) {
@@ -94,6 +99,7 @@ export async function POST(req: NextRequest) {
       where: {
         userId,
         OR: [
+          ...(depId ? [{ id: depId }] : []),
           ...(projectId ? [{ projectId }] : []),
           { name: cleanName },
           { containerName: containerName || `ray-${cleanName.toLowerCase()}` },
@@ -116,12 +122,17 @@ export async function POST(req: NextRequest) {
           status,
           buildLogs: buildLogs || existingDep.buildLogs,
           projectPath: projectPath || existingDep.projectPath,
+          ...(repoUrl ? { repoUrl } : {}),
+          ...(branch ? { branch } : {}),
+          ...(commitHash ? { commitHash } : {}),
+          ...(commitMessage ? { commitMessage } : {}),
           updatedAt: new Date(),
         },
       });
     } else {
       savedDeployment = await prisma.rayDeployment.create({
         data: {
+          ...(depId ? { id: depId } : {}),
           userId,
           projectId: projectId || null,
           name: cleanName,
@@ -133,6 +144,10 @@ export async function POST(req: NextRequest) {
           hostPort: hostPort !== undefined ? Number(hostPort) : null,
           containerPort: Number(containerPort) || 3000,
           deployUrl: deployUrl || null,
+          repoUrl: repoUrl || null,
+          branch: branch || "main",
+          commitHash: commitHash || null,
+          commitMessage: commitMessage || null,
           status,
           buildLogs,
         },

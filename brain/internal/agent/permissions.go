@@ -15,9 +15,10 @@ import (
 // When true: tools run immediately without asking.
 var (
 	autonomousMu    sync.RWMutex
-	autonomousMode  bool
-	deploymentsPath string
-	savedApiKeys    = make(map[string]string)
+	autonomousMode         = false
+	deploymentsPath        = ""
+	savedApiKeys           = make(map[string]string)
+	securityChecksEnabled  = true
 )
 
 // settingsPath returns the path to the persistent settings file.
@@ -45,9 +46,10 @@ func settingsPath() string {
 }
 
 type persistedSettings struct {
-	AutonomousMode  bool              `json:"autonomousMode"`
-	DeploymentsPath string            `json:"deploymentsPath,omitempty"`
-	ApiKeys         map[string]string `json:"apiKeys,omitempty"`
+	AutonomousMode        bool              `json:"autonomousMode"`
+	DeploymentsPath       string            `json:"deploymentsPath,omitempty"`
+	ApiKeys               map[string]string `json:"apiKeys,omitempty"`
+	SecurityChecksEnabled *bool             `json:"securityChecksEnabled,omitempty"`
 }
 
 // DefaultDeploymentsDir returns the default OS-dependent common deployment location.
@@ -72,6 +74,9 @@ func loadSettings() {
 	if json.Unmarshal(data, &s) == nil {
 		autonomousMode = s.AutonomousMode
 		deploymentsPath = s.DeploymentsPath
+		if s.SecurityChecksEnabled != nil {
+			securityChecksEnabled = *s.SecurityChecksEnabled
+		}
 		if s.ApiKeys != nil {
 			savedApiKeys = make(map[string]string)
 			for k, v := range s.ApiKeys {
@@ -98,9 +103,10 @@ func saveSettings() {
 		return
 	}
 	s := persistedSettings{
-		AutonomousMode:  autonomousMode,
-		DeploymentsPath: deploymentsPath,
-		ApiKeys:         savedApiKeys,
+		AutonomousMode:        autonomousMode,
+		DeploymentsPath:       deploymentsPath,
+		ApiKeys:               savedApiKeys,
+		SecurityChecksEnabled: &securityChecksEnabled,
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
@@ -214,6 +220,21 @@ func SetDeploymentsDir(path string) {
 	autonomousMu.Unlock()
 
 	_ = os.MkdirAll(GetDeploymentsDir(), 0o755)
+}
+
+// IsSecurityChecksEnabled returns whether automated security audits are active.
+func IsSecurityChecksEnabled() bool {
+	autonomousMu.RLock()
+	defer autonomousMu.RUnlock()
+	return securityChecksEnabled
+}
+
+// SetSecurityChecksEnabled toggles automated security checks.
+func SetSecurityChecksEnabled(enabled bool) {
+	autonomousMu.Lock()
+	defer autonomousMu.Unlock()
+	securityChecksEnabled = enabled
+	saveSettings()
 }
 
 // PermissionRequest describes a tool call that needs user approval.

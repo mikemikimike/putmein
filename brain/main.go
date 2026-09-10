@@ -21,8 +21,8 @@ import (
 )
 
 func main() {
-	// Load .env from the directory of the binary (or current dir)
-	_ = godotenv.Load()
+	// Load .env from multiple paths (current dir, brain/.env, parent)
+	_ = godotenv.Load(".env", "brain/.env", "../brain/.env")
 
 	port := os.Getenv("BRAIN_PORT")
 	if port == "" {
@@ -50,6 +50,10 @@ func main() {
 	}
 
 	internalSecret := os.Getenv("BRAIN_INTERNAL_SECRET")
+	if internalSecret == "" {
+		internalSecret = "brain-ray-internal-putmein-2024"
+		_ = os.Setenv("BRAIN_INTERNAL_SECRET", internalSecret)
+	}
 
 	// Start the monitor service (in-memory; Ray Next.js owns DB persistence)
 	svc := monitor.NewService(

@@ -49,6 +49,7 @@ model User {
   deployments        RayDeployment[]
   githubIntegrations RayGithubIntegration[]
   pipelines          RayPipeline[]
+  securityScans      RaySecurityScan[]
 
   @@map("users")
 }
@@ -226,4 +227,32 @@ model RayPipelineRun {
 
   @@map("ray_pipeline_runs")
 }
+
+// =============================================
+// SECURITY TABLES (additive — never alters existing tables)
+// =============================================
+
+model RaySecurityScan {
+  id          String   @id @default(cuid())
+  userId      String
+  projectId   String?  // linked RayMonitorProject id if exists
+  projectName String
+  trigger     String   // "deploy_first_time" | "cicd_pipeline" | "manual"
+  status      String   // "passed" | "warning" | "danger"
+  dangerCount Int      @default(0)
+  warnCount   Int      @default(0)
+  infoCount   Int      @default(0)
+  findings    String   @db.LongText // JSON array of RaySecurityFindingItem
+  logs        String   @db.LongText // Step-by-step audit logs
+  overrideBy  String?  // user name if overridden
+  overridden  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([projectId])
+  @@map("ray_security_scans")
+}
+
 

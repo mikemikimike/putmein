@@ -11,6 +11,10 @@ export default function SettingsPage() {
   const [autonomousLoading, setAutonomousLoading] = useState(true);
   const [autonomousSaving, setAutonomousSaving] = useState(false);
 
+  // Security Checks state
+  const [securityChecksEnabled, setSecurityChecksEnabled] = useState(true);
+  const [securityChecksSaving, setSecurityChecksSaving] = useState(false);
+
   const [deploymentsPath, setDeploymentsPath] = useState("");
   const [defaultDeploymentsPath, setDefaultDeploymentsPath] = useState("");
   const [deploymentsSaving, setDeploymentsSaving] = useState(false);
@@ -43,6 +47,9 @@ export default function SettingsPage() {
       .then((r) => r.json())
       .then((data) => {
         setAutonomous(data.autonomous ?? false);
+        if (typeof data.securityChecksEnabled === "boolean") {
+          setSecurityChecksEnabled(data.securityChecksEnabled);
+        }
         setDeploymentsPath(data.deploymentsPath ?? "");
         setDefaultDeploymentsPath(data.defaultDeploymentsPath ?? "");
         if (data.apiKeys) {
@@ -121,6 +128,26 @@ export default function SettingsPage() {
     setAutonomousSaving(false);
   };
 
+  const toggleSecurityChecks = async () => {
+    setSecurityChecksSaving(true);
+    const nextVal = !securityChecksEnabled;
+    setSecurityChecksEnabled(nextVal);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ securityChecksEnabled: nextVal }),
+      });
+      const data = await res.json();
+      if (data && typeof data.securityChecksEnabled === "boolean") {
+        setSecurityChecksEnabled(data.securityChecksEnabled);
+      }
+    } catch {
+      // optimistic toggle kept
+    }
+    setSecurityChecksSaving(false);
+  };
+
   const handleSaveDeploymentsPath = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setDeploymentsSaving(true);
@@ -178,7 +205,7 @@ export default function SettingsPage() {
     {
       id: "claude",
       name: "Anthropic Claude",
-      logo: "/ai/Claude.svg",
+      logo: "/ai/claude.svg",
       status: apiKeysStatus.claude,
       subtitle: "Frontier reasoning, deep architecture & coding",
       placeholder: "sk-ant-…",
@@ -188,7 +215,7 @@ export default function SettingsPage() {
     {
       id: "openai",
       name: "OpenAI ChatGPT",
-      logo: "/ai/OpenAI.svg",
+      logo: "/ai/openai.svg",
       status: apiKeysStatus.openai,
       subtitle: "Advanced foundation & reasoning models",
       placeholder: "sk-proj-…",
@@ -198,7 +225,7 @@ export default function SettingsPage() {
     {
       id: "deepseek",
       name: "DeepSeek AI",
-      logo: "/ai/DeepSeek.svg",
+      logo: "/ai/deepseek.svg",
       status: apiKeysStatus.deepseek,
       subtitle: "High efficiency code, math & multimodal",
       placeholder: "sk-…",
@@ -208,7 +235,7 @@ export default function SettingsPage() {
     {
       id: "gemini",
       name: "Google Gemini",
-      logo: "/ai/Gemini.svg",
+      logo: "/ai/gemini.svg",
       status: apiKeysStatus.gemini,
       subtitle: "Multimodal intelligence with thinking controls",
       placeholder: "AIzaSy…",
@@ -218,7 +245,7 @@ export default function SettingsPage() {
     {
       id: "openrouter",
       name: "OpenRouter",
-      logo: "/ai/OpenRouter.svg",
+      logo: "/ai/openrouter.svg",
       status: apiKeysStatus.openrouter,
       subtitle: "Universal gateway to hundreds of open & custom models",
       placeholder: "sk-or-v1-…",
@@ -573,6 +600,102 @@ export default function SettingsPage() {
           )}
         </div>
 
+        {/* Automatic Security Checks Card */}
+        <div
+          className="ray-card p-6 mb-4"
+          style={{
+            background: "#0a0a0a",
+            border: securityChecksEnabled ? "1px solid rgba(16,185,129,0.25)" : "1px solid #1a1a1a",
+            borderRadius: "12px",
+          }}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="text-sm font-medium text-white">
+                  Automatic Security Checks
+                </div>
+                {securityChecksEnabled ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Active (Default)
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.05] text-white/40 border border-white/10">
+                    Disabled
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-[#52525b]">
+                Audit repositories for known Next.js/React CVEs, exposed secrets, Dockerfile vulnerabilities, and OWASP security flaws upon first deployment and on CI/CD pipeline triggers. Halts deployment if danger-level vulnerabilities are identified until dual consent is provided.
+              </div>
+            </div>
+            <button
+              onClick={toggleSecurityChecks}
+              disabled={autonomousLoading || securityChecksSaving}
+              id="security-checks-toggle"
+              aria-label="Toggle automatic security checks"
+              style={{
+                position: "relative",
+                flexShrink: 0,
+                marginLeft: 16,
+                width: 36,
+                height: 20,
+                borderRadius: 10,
+                border: "none",
+                outline: "none",
+                cursor: autonomousLoading || securityChecksSaving ? "not-allowed" : "pointer",
+                background: securityChecksEnabled ? "#10b981" : "rgba(255,255,255,0.12)",
+                transition: "background 180ms",
+                opacity: autonomousLoading ? 0.4 : 1,
+              }}
+            >
+              <span
+                style={{
+                  position: "absolute",
+                  top: 3,
+                  left: securityChecksEnabled ? 19 : 3,
+                  width: 14,
+                  height: 14,
+                  borderRadius: "50%",
+                  background: securityChecksEnabled ? "#000" : "rgba(255,255,255,0.6)",
+                  transition: "left 180ms, background 180ms",
+                }}
+              />
+            </button>
+          </div>
+
+          {!securityChecksEnabled && (
+            <div
+              className="mt-3 flex items-start gap-2 p-3 rounded-lg text-xs"
+              style={{
+                background: "rgba(244,63,94,0.06)",
+                border: "1px solid rgba(244,63,94,0.2)",
+                color: "#f43f5e",
+              }}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="flex-shrink-0 mt-0.5"
+              >
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <span>
+                <strong>Automated security checks are disabled.</strong> Code will be built and deployed without automated vulnerability scanning or danger gates in CI/CD pipelines.
+              </span>
+            </div>
+          )}
+        </div>
+
         {/* Deployments & Containers Base Directory */}
         <div
           className="ray-card p-6 mb-4"
@@ -801,7 +924,7 @@ function GitHubSettingsCard() {
     fetchStatus();
   }, []);
 
-  // Coolify-style 1-click GitHub App creation
+  // 1-click GitHub App creation
   const handleCoolifyAppSetup = async () => {
     setManifestLoading(true);
     try {
@@ -809,7 +932,7 @@ function GitHubSettingsCard() {
       if (!res.ok) throw new Error("Failed to get manifest");
       const data = await res.json();
 
-      // Create hidden form and submit to GitHub settings/apps/new (Coolify pattern)
+      // Create hidden form and submit to GitHub settings/apps/new
       const form = document.createElement("form");
       form.method = "POST";
       form.action = data.actionUrl || "https://github.com/settings/apps/new";
@@ -873,7 +996,7 @@ function GitHubSettingsCard() {
             GitHub Integration
           </h2>
           <p className="text-xs text-[#52525b]">
-            Link your GitHub account automatically as a GitHub App (like Coolify) for seamless repository imports and CI/CD.
+            Link your GitHub account automatically as a GitHub App for seamless repository imports and CI/CD.
           </p>
         </div>
         {status.connected ? (
@@ -943,7 +1066,7 @@ function GitHubSettingsCard() {
         </div>
       ) : (
         <div className="flex items-center gap-3">
-          {/* Coolify-style 1-Click App Registration */}
+          {/* 1-Click App Registration */}
           <button
             onClick={handleCoolifyAppSetup}
             disabled={manifestLoading}

@@ -76,6 +76,11 @@ func NewRouter() http.Handler {
 	mux.HandleFunc("/v1/monitor/process/", monitorProjectsRouteHandler) // process detect/spawn/stop
 	mux.HandleFunc("/v1/monitor/alerts", monitorAlertsHandler)
 
+	// Security routes
+	mux.HandleFunc("/v1/security/scan", securityScanHandler)
+	mux.HandleFunc("/v1/security/rules", securityRulesHandler)
+	mux.HandleFunc("/v1/security/scans", securityScansHandler)
+
 	// Deploy routes
 	mux.HandleFunc("/v1/deploy", deployHandler)
 	mux.HandleFunc("/v1/deploy/logs", deployLogsHandler)

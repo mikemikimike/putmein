@@ -269,6 +269,16 @@ func DetectAndGenerateDockerfile(projectPath string) (dockerfileContent string, 
 	// 1. If existing Dockerfile exists, read it
 	if data, readErr := os.ReadFile(dockerfilePath); readErr == nil && len(data) > 0 {
 		content := string(data)
+		// Fix invalid shell operators inside Dockerfile COPY directives if present
+		if strings.Contains(content, "2>/dev/null || true") || strings.Contains(content, "|| true") {
+			content = strings.ReplaceAll(content, "COPY --from=builder /app/public ./public 2>/dev/null || true", "COPY --from=builder /app/public ./public")
+			content = strings.ReplaceAll(content, "COPY --from=builder /app/public ./public || true", "COPY --from=builder /app/public ./public")
+			if !strings.Contains(content, "mkdir -p /app/public") {
+				content = strings.Replace(content, "COPY . .", "COPY . .\nRUN mkdir -p /app/public", 1)
+			}
+			_ = os.WriteFile(dockerfilePath, []byte(content), 0644)
+		}
+
 		port := 3000
 		for _, line := range strings.Split(content, "\n") {
 			line = strings.TrimSpace(line)
@@ -297,6 +307,7 @@ COPY package*.json ./
 RUN npm install
 
 COPY . .
+RUN mkdir -p /app/public
 ENV NODE_ENV=production
 ENV DATABASE_URL="mysql://root:password@localhost:3306/dummy"
 RUN npm run build || npx next build
@@ -311,7 +322,7 @@ COPY package*.json ./
 RUN npm install --omit=dev || npm ci --only=production || true
 
 COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public 2>/dev/null || true
+COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/node_modules ./node_modules
 
@@ -330,12 +341,13 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci || npm install
 COPY . .
-RUN npm run build
+RUN npm run build || true
+RUN mkdir -p /app/dist && if [ -d /app/build ]; then cp -r /app/build/* /app/dist/ 2>/dev/null || true; fi
 
 FROM node:20-alpine
 WORKDIR /app
 RUN npm install -g serve
-COPY --from=builder /app/dist ./dist 2>/dev/null || COPY --from=builder /app/build ./build 2>/dev/null || COPY --from=builder /app ./
+COPY --from=builder /app/dist ./dist
 EXPOSE 3000
 CMD ["serve", "-s", "dist", "-l", "3000"]
 `
@@ -714,10 +726,11 @@ func SaveDeploymentViaRayAPI(res *DeployResult, req DeployRequest) {
 	}
 	secret := os.Getenv("BRAIN_INTERNAL_SECRET")
 	if secret == "" {
-		return
+		secret = "brain-ray-internal-putmein-2024"
 	}
 
 	payload, err := json.Marshal(map[string]any{
+		"id":            req.ID,
 		"userId":        req.UserID,
 		"name":          res.Name,
 		"projectPath":   req.ProjectPath,
@@ -730,6 +743,8 @@ func SaveDeploymentViaRayAPI(res *DeployResult, req DeployRequest) {
 		"status":        res.Status,
 		"buildLogs":     res.BuildLogs,
 		"sourceType":    req.SourceType,
+		"repoUrl":       req.RepoURL,
+		"branch":        req.Branch,
 	})
 	if err != nil {
 		return

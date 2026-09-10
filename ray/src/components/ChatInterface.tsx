@@ -1029,11 +1029,247 @@ export default function ChatInterface({
   }, [messages, scrollToBottom]);
   useEffect(() => { inputRef.current?.focus(); }, []);
 
+  // Re-attach to active background chat run if in progress
+  const checkAndAttachActiveStream = useCallback(async (sid: string) => {
+    try {
+      const res = await fetch(`/api/chat/status?sessionId=${sid}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.run?.status === "running") {
+        setIsLoading(true);
+        abortRef.current = new AbortController();
+
+        const assistantMsgId = `stream-${Date.now()}`;
+        setMessages((prev) => {
+          const hasStreaming = prev.some((m) => m.streaming);
+          if (hasStreaming) return prev;
+          return [
+            ...prev,
+            {
+              id: assistantMsgId,
+              role: "assistant" as const,
+              content: "",
+              timestamp: new Date(),
+              streaming: true,
+            },
+          ];
+        });
+
+        const streamRes = await fetch(`/api/chat?sessionId=${sid}`, {
+          signal: abortRef.current.signal,
+        });
+        if (!streamRes.ok || !streamRes.body) {
+          setIsLoading(false);
+          return;
+        }
+
+        const reader = streamRes.body.getReader();
+        const decoder = new TextDecoder();
+        let rawBuffer = "";
+        let fullAssistantText = "";
+        let thinkingText = "";
+        const toolBlocks: ToolBlock[] = [];
+        const parts: MessagePart[] = [];
+        let activeToolBlock: ToolBlock | null = null;
+
+        const processLine = (line: string) => {
+          if (!line.trim()) return;
+
+          if (line.startsWith("data: ")) {
+            try {
+              const json = JSON.parse(line.slice(6));
+
+              if (json.type === "thinking-delta" && typeof json.delta === "string") {
+                thinkingText += json.delta;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.streaming
+                      ? {
+                          ...m,
+                          content: fullAssistantText,
+                          thinking: thinkingText,
+                          parts: [...parts],
+                          toolBlocks: [...toolBlocks],
+                          streaming: true,
+                        }
+                      : m
+                  )
+                );
+                return;
+              }
+
+              if (json.type === "tool-start" || json.type === "tool-output" || json.type === "tool-end") {
+                const toolEvent = { ...json, id: `${json.type}-${Date.now()}-${Math.random()}` };
+
+                if (json.type === "tool-start") {
+                  const newBlock: ToolBlock = {
+                    id: `tool-${Date.now()}-${Math.random()}`,
+                    tool: json.tool,
+                    cmd: json.cmd || json.tool,
+                    status: "running",
+                    output: "",
+                    startTime: Date.now(),
+                  };
+                  activeToolBlock = newBlock;
+                  toolBlocks.push(newBlock);
+                  parts.push({ type: "tool", block: newBlock });
+
+                  if (json.tool === "deploy") {
+                    const nameMatch = (json.cmd || "").match(/name="([^"]+)"/) || (json.cmd || "").match(/deploy\s+([^\s|>]+)/);
+                    const pathMatch = (json.cmd || "").match(/path="([^"]+)"/);
+                    const name = nameMatch ? nameMatch[1] : "Application";
+                    const projectPath = pathMatch ? pathMatch[1] : "";
+                    window.dispatchEvent(
+                      new CustomEvent("ray:tool-deploy-start", {
+                        detail: { name, projectPath },
+                      })
+                    );
+                  } else if (json.tool === "monitor_add") {
+                    window.dispatchEvent(new Event("ray:open-monitor-project"));
+                  } else {
+                    window.dispatchEvent(new Event("ray:open-terminal"));
+                  }
+                } else if (json.type === "tool-output" && activeToolBlock && json.delta) {
+                  activeToolBlock.output += json.delta;
+                  if (json.tool === "deploy" || activeToolBlock.tool === "deploy") {
+                    window.dispatchEvent(
+                      new CustomEvent("ray:tool-deploy-output", {
+                        detail: { delta: json.delta },
+                      })
+                    );
+                  }
+                } else if (json.type === "tool-end" && activeToolBlock) {
+                  activeToolBlock.status = (json.exit ?? 0) === 0 ? "completed" : "error";
+                  activeToolBlock.durationSec = Math.max(0.1, (Date.now() - activeToolBlock.startTime) / 1000);
+                  activeToolBlock.exit = json.exit ?? 0;
+                  if (json.tool === "deploy" || activeToolBlock.tool === "deploy") {
+                    window.dispatchEvent(
+                      new CustomEvent("ray:tool-deploy-end", {
+                        detail: { exit: json.exit },
+                      })
+                    );
+                  }
+                  activeToolBlock = null;
+                }
+
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.streaming
+                      ? {
+                          ...m,
+                          content: fullAssistantText,
+                          thinking: thinkingText || m.thinking,
+                          parts: [...parts],
+                          toolBlocks: [...toolBlocks],
+                          streaming: true,
+                        }
+                      : m
+                  )
+                );
+
+                window.dispatchEvent(new CustomEvent("ray:tool-event", { detail: toolEvent }));
+                return;
+              }
+
+              if (json.type === "text-delta" && typeof json.delta === "string") {
+                fullAssistantText += json.delta;
+                const lastPart = parts[parts.length - 1];
+                if (lastPart && lastPart.type === "text") {
+                  lastPart.text += json.delta;
+                } else {
+                  parts.push({ type: "text", text: json.delta });
+                }
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.streaming
+                      ? {
+                          ...m,
+                          content: fullAssistantText,
+                          thinking: thinkingText || m.thinking,
+                          parts: [...parts],
+                          toolBlocks: [...toolBlocks],
+                          streaming: true,
+                        }
+                      : m
+                  )
+                );
+              }
+            } catch {}
+            return;
+          }
+
+          if (line.startsWith("0:")) {
+            try {
+              const parsed = JSON.parse(line.slice(2));
+              if (typeof parsed === "string") {
+                fullAssistantText += parsed;
+                const lastPart = parts[parts.length - 1];
+                if (lastPart && lastPart.type === "text") {
+                  lastPart.text += parsed;
+                } else {
+                  parts.push({ type: "text", text: parsed });
+                }
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.streaming
+                      ? {
+                          ...m,
+                          content: fullAssistantText,
+                          thinking: thinkingText || m.thinking,
+                          parts: [...parts],
+                          toolBlocks: [...toolBlocks],
+                          streaming: true,
+                        }
+                      : m
+                  )
+                );
+              }
+            } catch {}
+          }
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          rawBuffer += decoder.decode(value, { stream: true });
+          const lines = rawBuffer.split("\n");
+          rawBuffer = lines.pop() ?? "";
+          for (const line of lines) {
+            processLine(line);
+          }
+        }
+        if (rawBuffer.trim()) processLine(rawBuffer);
+
+        const finalFullContent = fullAssistantText.trim();
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.streaming
+              ? {
+                  ...m,
+                  content: finalFullContent,
+                  thinking: thinkingText || m.thinking,
+                  parts: [...parts],
+                  toolBlocks: [...toolBlocks],
+                  streaming: false,
+                }
+              : m
+          )
+        );
+
+        setIsLoading(false);
+        window.dispatchEvent(new CustomEvent("ray:chat-status-change"));
+      }
+    } catch {
+      setIsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (initialSessionId) {
       window.dispatchEvent(new CustomEvent("ray:session-switched", { detail: { sessionId: initialSessionId } }));
+      checkAndAttachActiveStream(initialSessionId);
     }
-  }, [initialSessionId]);
+  }, [initialSessionId, checkAndAttachActiveStream]);
 
   // Extract and broadcast session tool blocks on initial mount
   useEffect(() => {
@@ -1195,13 +1431,16 @@ export default function ChatInterface({
             if (allSessionBlocks.length > 0) {
               window.dispatchEvent(new CustomEvent("ray:sync-terminal-history", { detail: { toolBlocks: allSessionBlocks } }));
             }
+            if (initialSessionId) {
+              checkAndAttachActiveStream(initialSessionId);
+            }
           }
         })
         .catch(() => { });
     } else {
       setMessages([]);
     }
-  }, [initialSessionId, initialModel]);
+  }, [initialSessionId, initialModel, checkAndAttachActiveStream]);
 
   // Keep terminal button state in sync with ClientLayout's terminalOpen
   useEffect(() => {
@@ -1923,6 +2162,7 @@ CRITICAL INSTRUCTIONS FOR AI:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          sessionId: sid,
           messages: [
             ...newMessages.slice(0, -1).map((m) => ({
               role: m.role,
@@ -1931,9 +2171,14 @@ CRITICAL INSTRUCTIONS FOR AI:
             { role: "user", content: enrichedText },
           ],
           modelId,
+          userMessageToSave: text || (attachedContextItem ? `Deploy / Inspect ${attachedContextItem.name}` : ""),
+          attachedContextItem,
         }),
         signal: abortRef.current.signal,
       });
+
+      // Promptly inform sidebar that run has started
+      window.dispatchEvent(new CustomEvent("ray:chat-status-change"));
 
       if (!res.ok) {
         const err = await res.json();
@@ -2218,37 +2463,26 @@ CRITICAL INSTRUCTIONS FOR AI:
         )
       );
 
-      // Save both messages to session
-      if (sid) {
-        const savedUserContent = attachedContextItem
-          ? `<!-- attachedContext:${JSON.stringify(attachedContextItem)} -->\n${text || `Deploy / Inspect ${attachedContextItem.name}`}`
-          : text;
+      // Update message in state to final completed state
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === currentMsgIdRef.current
+            ? {
+              ...m,
+              content: finalFullContent,
+              thinking: thinkingText || m.thinking,
+              parts: [...parts],
+              toolBlocks: [...toolBlocks],
+              streaming: false,
+            }
+            : m
+        )
+      );
 
-        let savedAssistantContent = finalFullContent;
-        if (thinkingText || (toolBlocks && toolBlocks.length > 0)) {
-          const meta = {
-            thinking: thinkingText || undefined,
-            toolBlocks: toolBlocks.length > 0 ? toolBlocks : undefined,
-          };
-          savedAssistantContent = `<!-- rayAssistantMeta:${JSON.stringify(meta)} -->\n${finalFullContent}`;
-        }
-
-        await saveMessages(sid, [
-          { role: "user", content: savedUserContent },
-          { role: "assistant", content: savedAssistantContent },
-        ]);
-
-        if (messages.length === 0) {
-          // Fire and forget auto-title generation
-          fetch(`/api/sessions/${sid}/generate-title`, { method: "POST" })
-            .then((res) => res.json())
-            .then((data) => {
-              if (data.title) {
-                window.dispatchEvent(new Event("ray:session-created"));
-              }
-            })
-            .catch(console.error);
-        }
+      // Note: User & assistant messages are already safely saved to MySQL by the background chatRunner
+      window.dispatchEvent(new CustomEvent("ray:chat-status-change"));
+      if (messages.length === 0) {
+        window.dispatchEvent(new Event("ray:session-created"));
       }
     } catch (err: unknown) {
       const isAbort = err instanceof Error && err.name === "AbortError";
@@ -2466,6 +2700,14 @@ CRITICAL INSTRUCTIONS FOR AI:
     autoRetryAttemptRef.current = 0;
     setAutoRetryAttempt(0);
     abortRef.current?.abort();
+
+    if (sessionId) {
+      fetch("/api/chat/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      }).catch(() => {});
+    }
   };
 
   const modelName = MODELS.find((m) => m.id === modelId)?.label || "Ozias";

@@ -636,11 +636,31 @@ step "6/6" "Installing PutmeIn Engine & Starting Services..."
 rm -f "$NPM_PREFIX/bin/ray" "$NPM_PREFIX/bin/putmein" "/usr/local/bin/ray" "/usr/local/bin/putmein" 2>/dev/null || true
 
 info "Installing 'putmein-test' package from NPM..."
-if npm install -g putmein-test@latest --force 2>/dev/null; then
-  success "PutmeIn CLI installed globally!"
+NPM_INSTALLED=false
+for attempt in 1 2 3; do
+  if npm install -g putmein-test@latest --force 2>/dev/null; then
+    NPM_INSTALLED=true
+    break
+  elif [ "$(id -u)" -ne 0 ] && command -v sudo &>/dev/null; then
+    if run_elevated npm install -g putmein-test@latest --force; then
+      NPM_INSTALLED=true
+      break
+    fi
+  fi
+  if [ "$attempt" -lt 3 ]; then
+    warn "NPM package replication or network sync in progress. Retrying in 4s (attempt $((attempt + 1))/3)..."
+    sleep 4
+  fi
+done
+
+if [ "$NPM_INSTALLED" = true ]; then
+  success "PutmeIn CLI installed successfully!"
 else
-  warn "Permission denied installing globally. Attempting with elevated privileges..."
-  run_elevated npm install -g putmein-test@latest --force
+  warn "Retrying global install with detailed logging..."
+  run_elevated npm install -g putmein-test@latest --force || {
+    error "Failed to install 'putmein-test' from NPM. Please verify npm registry connection."
+    exit 1
+  }
   success "PutmeIn CLI installed successfully!"
 fi
 
@@ -704,23 +724,23 @@ BOX_BORDER=$(printf '─%.0s' {1..70})
 echo ""
 echo -e "${BOLD}${CYAN}╭${BOX_BORDER}╮${NC}"
 print_box_line ""
-print_box_line "${BOLD}${GREEN}✔ PutmeIn successfully installed and running!${NC}"
+print_box_line "${BOLD}${GREEN}[OK] PutmeIn successfully installed and running!${NC}"
 print_box_line ""
 print_box_line "${BOLD}Web Dashboard (Ray):${NC}    ${CYAN}http://localhost:${RAY_PORT}${NC}"
 print_box_line "${BOLD}Network Dashboard:${NC}      ${CYAN}http://${LAN_IP}:${RAY_PORT}${NC}"
 print_box_line "${BOLD}AI Backend (Brain):${NC}     ${DIM}http://localhost:${BRAIN_PORT}${NC}"
 print_box_line ""
 print_box_line "${BOLD}Default Admin Login:${NC}"
-print_box_line "  • Email:    ${YELLOW}admin@putme.in${NC}"
-print_box_line "  • Password: ${YELLOW}admin123${NC}"
+print_box_line "  * Email:    ${YELLOW}admin@putme.in${NC}"
+print_box_line "  * Password: ${YELLOW}admin123${NC}"
 print_box_line ""
 print_box_line "${BOLD}Useful CLI Commands:${NC}"
-print_box_line "  • ${YELLOW}ray status${NC}         Inspect service health and memory"
-print_box_line "  • ${YELLOW}ray logs${NC}           Stream real-time unified logs"
-print_box_line "  • ${YELLOW}ray stop${NC}           Stop running background services"
-print_box_line "  • ${YELLOW}ray restart${NC}        Restart background services"
-print_box_line "  • ${YELLOW}ray cohen${NC}          Launch interactive terminal TUI"
-print_box_line "  • ${YELLOW}ray --no-startup${NC}   Disable launching on system boot"
+print_box_line "  * ${YELLOW}ray status${NC}         Inspect service health and memory"
+print_box_line "  * ${YELLOW}ray logs${NC}           Stream real-time unified logs"
+print_box_line "  * ${YELLOW}ray stop${NC}           Stop running background services"
+print_box_line "  * ${YELLOW}ray restart${NC}        Restart background services"
+print_box_line "  * ${YELLOW}ray cohen${NC}          Launch interactive terminal TUI"
+print_box_line "  * ${YELLOW}ray --no-startup${NC}   Disable launching on system boot"
 print_box_line ""
 echo -e "${BOLD}${CYAN}╰${BOX_BORDER}╯${NC}"
 echo ""
