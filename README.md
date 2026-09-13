@@ -48,12 +48,12 @@ PutmeIn combines **Ray** (an interactive Next.js web console and management dash
 ### Option 1: Automatic One-Line Installation (Recommended)
 ```bash
 # Linux / macOS / WSL
-curl -fsSL https://get.putme.in | bash
+curl -fsSL https://putme.in/install.sh | bash
 ```
 
 ```powershell
 # Windows (PowerShell)
-irm https://get.putme.in/ps1 | iex
+powershell -c "irm https://putme.in/install.ps1 | iex"
 ```
 
 ### Option 2: Global NPM Installation
