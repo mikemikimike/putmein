@@ -35,7 +35,7 @@ Select the installation method that best fits your technical requirements and in
 
 ```bash
 # macOS (Apple Silicon & Intel)
-curl -fsSL https://get.putme.in | bash
+curl -fsSL https://putme.in/install.sh | bash
 ```
 
   </TabItem>
@@ -43,7 +43,7 @@ curl -fsSL https://get.putme.in | bash
 
 ```bash
 # Linux (Ubuntu, Debian, Fedora, Arch, CentOS)
-curl -fsSL https://get.putme.in | bash
+curl -fsSL https://putme.in/install.sh | bash
 ```
 
   </TabItem>
@@ -51,7 +51,7 @@ curl -fsSL https://get.putme.in | bash
 
 ```powershell
 # Windows (PowerShell 5.1+ / PowerShell 7)
-irm https://get.putme.in/ps1 | iex
+powershell -c "irm https://putme.in/install.ps1 | iex"
 ```
 
   </TabItem>
