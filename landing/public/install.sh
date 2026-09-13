@@ -637,14 +637,14 @@ step "6/6" "Installing PutmeIn Engine & Starting Services..."
 # Remove old shims to guarantee zero conflicts
 rm -f "$NPM_PREFIX/bin/ray" "$NPM_PREFIX/bin/putmein" "/usr/local/bin/ray" "/usr/local/bin/putmein" 2>/dev/null || true
 
-info "Installing 'putmein-test' package from NPM..."
+info "Installing 'putmein' package from NPM..."
 NPM_INSTALLED=false
 for attempt in 1 2 3; do
-  if npm install -g putmein-test@latest --force 2>/dev/null; then
+  if npm install -g putmein@latest --force 2>/dev/null; then
     NPM_INSTALLED=true
     break
   elif [ "$(id -u)" -ne 0 ] && command -v sudo &>/dev/null; then
-    if run_elevated npm install -g putmein-test@latest --force; then
+    if run_elevated npm install -g putmein@latest --force; then
       NPM_INSTALLED=true
       break
     fi
@@ -659,8 +659,8 @@ if [ "$NPM_INSTALLED" = true ]; then
   success "PutmeIn CLI installed successfully!"
 else
   warn "Retrying global install with detailed logging..."
-  run_elevated npm install -g putmein-test@latest --force || {
-    error "Failed to install 'putmein-test' from NPM. Please verify npm registry connection."
+  run_elevated npm install -g putmein@latest --force || {
+    error "Failed to install 'putmein' from NPM. Please verify npm registry connection."
     exit 1
   }
   success "PutmeIn CLI installed successfully!"
@@ -668,7 +668,7 @@ fi
 
 # Locate exact package directory
 GLOBAL_NPM_ROOT=$(npm root -g 2>/dev/null || echo "/usr/local/lib/node_modules")
-PUTMEIN_PKG_DIR="$GLOBAL_NPM_ROOT/putmein-test"
+PUTMEIN_PKG_DIR="$GLOBAL_NPM_ROOT/putmein"
 
 # Guarantee ray binary symlink is present and in PATH
 if [ -f "$PUTMEIN_PKG_DIR/bin/ray.js" ]; then

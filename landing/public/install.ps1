@@ -253,7 +253,7 @@ Write-Step "6/6" "Installing PutmeIn Engine & Starting Services..."
 Write-Color "  Installing PutmeIn package from NPM..." Cyan
 $npmInstalled = $false
 for ($attempt = 1; $attempt -le 3; $attempt++) {
-    & npm install -g putmein-test@latest --force
+    & npm install -g putmein@latest --force
     if ($LASTEXITCODE -eq 0) {
         $npmInstalled = $true
         break
@@ -267,7 +267,7 @@ for ($attempt = 1; $attempt -le 3; $attempt++) {
 if ($npmInstalled) {
     Write-Success "PutmeIn CLI installed globally!"
 } else {
-    Write-ErrorMsg "Failed to install 'putmein-test' from NPM. Please verify your network connection."
+    Write-ErrorMsg "Failed to install 'putmein' from NPM. Please verify your network connection."
     exit 1
 }
 
@@ -289,11 +289,11 @@ if (Test-DockerRunning) {
         $globalNpm = (npm root -g 2>$null)
         $sqlScriptPath = ""
         if ($globalNpm) {
-            $candidate = Join-Path $globalNpm.Trim() "putmein-test\bin\init-db.sql"
+            $candidate = Join-Path $globalNpm.Trim() "putmein\bin\init-db.sql"
             if (Test-Path $candidate) { $sqlScriptPath = $candidate }
         }
         if (-not $sqlScriptPath) {
-            $candidate = "$env:APPDATA\npm\node_modules\putmein-test\bin\init-db.sql"
+            $candidate = "$env:APPDATA\npm\node_modules\putmein\bin\init-db.sql"
             if (Test-Path $candidate) { $sqlScriptPath = $candidate }
         }
         if ($sqlScriptPath -and (Test-Path $sqlScriptPath)) {
@@ -318,12 +318,12 @@ if ($rayCmd) {
     $globalNpm = (npm root -g 2>$null)
     $rayScript = ""
     if ($globalNpm) {
-        $rayScript = Join-Path $globalNpm.Trim() "putmein-test\bin\ray.js"
+        $rayScript = Join-Path $globalNpm.Trim() "putmein\bin\ray.js"
     }
     if ($rayScript -and (Test-Path $rayScript)) {
         node $rayScript start
     } else {
-        node "$env:APPDATA\npm\node_modules\putmein-test\bin\ray.js" start
+        node "$env:APPDATA\npm\node_modules\putmein\bin\ray.js" start
     }
 }
 
