@@ -1,39 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import dns from "dns";
-import os from "os";
 import { verifyToken } from "@/lib/auth";
-
-function getLocalIp(): string {
-  try {
-    const interfaces = os.networkInterfaces();
-    for (const name of Object.keys(interfaces)) {
-      for (const iface of interfaces[name] || []) {
-        if (iface.family === "IPv4" && !iface.internal) {
-          return iface.address;
-        }
-      }
-    }
-  } catch { /* fallback */ }
-  return "127.0.0.1";
-}
-
-async function detectServerIp(): Promise<{ localIp: string; publicIp: string }> {
-  const localIp = getLocalIp();
-  let publicIp = localIp;
-  try {
-    const res = await fetch("https://api.ipify.org?format=json", {
-      signal: AbortSignal.timeout(1500),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.ip) publicIp = data.ip;
-    }
-  } catch {
-    // fallback
-  }
-  return { localIp, publicIp };
-}
+import { detectServerIp } from "@/lib/network";
 
 // GET /api/projects/[id]/domain-check?domain=...
 export async function GET(req: NextRequest) {

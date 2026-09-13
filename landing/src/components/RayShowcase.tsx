@@ -25,6 +25,18 @@ interface PlaylistItem {
 
 const PLAYLIST_DATA: PlaylistItem[] = [
   {
+    id: "ai-chat",
+    number: "00",
+    title: "Chat interface which helps you with anything",
+    subtitle: "Real-time process health, Docker telemetry, and server vitals",
+    description:
+      "You can chat with Ray and ask anything about your infrastructure. It will always be there to help you.",
+    duration: "Live",
+    badge: "GUI",
+    image: "/ray/ai.png",
+    icon: Cpu,
+  },
+  {
     id: "monitor",
     number: "01",
     title: "24/7 Telemetry & Infrastructure Monitoring",
@@ -33,7 +45,7 @@ const PLAYLIST_DATA: PlaylistItem[] = [
       "Monitor your entire infrastructure fleet with sub-second polling, deep container diagnosis, and real-time alert triage.",
     duration: "Live",
     badge: "Telemetry Cockpit",
-    image: "/ray/monitor.svg",
+    image: "/ray/monitor.png",
     icon: Cpu,
   },
   {
@@ -45,7 +57,7 @@ const PLAYLIST_DATA: PlaylistItem[] = [
       "Watch Ray autonomously build, test, and deploy isolated Nix-based environments directly on your VPS with guaranteed staging-to-production parity.",
     duration: "Atomic",
     badge: "Autonomous Deploy",
-    image: "/ray/deploy.svg",
+    image: "/ray/deploy.png",
     icon: Zap,
   },
   {
@@ -57,7 +69,7 @@ const PLAYLIST_DATA: PlaylistItem[] = [
       "When your primary Nginx or backend encounters a crash, Ray's ultra-fast Go Shadow Proxy catches and redirects incoming traffic in under 1 second.",
     duration: "99.99%",
     badge: "Zero-Downtime",
-    image: "/ray/self-healing.svg",
+    image: "/ray/self-healing.png",
     icon: RefreshCw,
   },
   {
@@ -69,7 +81,7 @@ const PLAYLIST_DATA: PlaylistItem[] = [
       "Deploy AI applications with confidence. Ray intercepts prompt injection payloads and sandboxes LLM agency before rogue actions touch your database.",
     duration: "SOC 2",
     badge: "AI Guardrails",
-    image: "/ray/security.svg",
+    image: "/ray/security.png",
     icon: Shield,
   },
 ];
@@ -94,65 +106,65 @@ export default function RayShowcase({ hideHeader = false, id = "demo" }: RayShow
     >
       {/* Massive Full-Width Centered Kinetic Intro Header */}
       {!hideHeader && (
-      <div className="w-full flex flex-col items-center justify-center text-center mb-16 md:mb-24">
-        <div className="w-full flex flex-wrap items-center justify-center gap-3 sm:gap-6 md:gap-8 lg:gap-10 select-none">
-          {/* Left Part: "Introducing" with kinetic drag-in motion */}
-          <motion.h2
-            initial={{ x: -160, opacity: 0 }}
-            animate={isInView ? { x: 0, opacity: 1 } : {}}
-            transition={{
-              duration: 0.55,
-              ease: [0.16, 1, 0.3, 1],
-            }}
-            className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl xl:text-9xl font-extrabold tracking-tight text-white leading-none"
-          >
-            Introducing
-          </motion.h2>
+        <div className="w-full flex flex-col items-center justify-center text-center mb-16 md:mb-24">
+          <div className="w-full flex flex-wrap items-center justify-center gap-3 sm:gap-6 md:gap-8 lg:gap-10 select-none">
+            {/* Left Part: "Introducing" with kinetic drag-in motion */}
+            <motion.h2
+              initial={{ x: -160, opacity: 0 }}
+              animate={isInView ? { x: 0, opacity: 1 } : {}}
+              transition={{
+                duration: 0.55,
+                ease: [0.16, 1, 0.3, 1],
+              }}
+              className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl xl:text-9xl font-extrabold tracking-tight text-white leading-none"
+            >
+              Introducing
+            </motion.h2>
 
-          {/* Middle Part: Ray Logo (/ray.svg) with NO background, pure crisp SVG */}
-          <motion.div
-            initial={{ scale: 0.2, opacity: 0 }}
-            animate={isInView ? { scale: 1, opacity: 1 } : {}}
-            transition={{
-              duration: 0.6,
-              delay: 0.12,
-              type: "spring",
-              stiffness: 260,
-              damping: 18,
-            }}
-            className="flex items-center justify-center"
-          >
-            <img
-              src="/ray.svg"
-              alt="Ray Logo"
-              className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 lg:w-32 lg:h-32 xl:w-36 xl:h-36 object-contain"
-            />
-          </motion.div>
+            {/* Middle Part: Ray Logo (/ray.svg) with NO background, pure crisp SVG */}
+            <motion.div
+              initial={{ scale: 0.2, opacity: 0 }}
+              animate={isInView ? { scale: 1, opacity: 1 } : {}}
+              transition={{
+                duration: 0.6,
+                delay: 0.12,
+                type: "spring",
+                stiffness: 260,
+                damping: 18,
+              }}
+              className="flex items-center justify-center"
+            >
+              <img
+                src="/ray.svg"
+                alt="Ray Logo"
+                className="w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 lg:w-32 lg:h-32 xl:w-36 xl:h-36 object-contain"
+              />
+            </motion.div>
 
-          {/* Right Part: "ray" in Pixel Font with kinetic rise-up motion */}
-          <motion.span
-            initial={{ y: 90, opacity: 0 }}
-            animate={isInView ? { y: 0, opacity: 1 } : {}}
-            transition={{
-              duration: 0.55,
-              delay: 0.2,
-              ease: [0.16, 1, 0.3, 1],
-            }}
-            className="pixel-font text-6xl sm:text-8xl md:text-9xl lg:text-[10rem] xl:text-[11rem] font-bold tracking-tight text-white leading-none"
+            {/* Right Part: "ray" in Pixel Font with kinetic rise-up motion */}
+            <motion.span
+              initial={{ y: 90, opacity: 0 }}
+              animate={isInView ? { y: 0, opacity: 1 } : {}}
+              transition={{
+                duration: 0.55,
+                delay: 0.2,
+                ease: [0.16, 1, 0.3, 1],
+              }}
+              className="pixel-font text-6xl sm:text-8xl md:text-9xl lg:text-[10rem] xl:text-[11rem] font-bold tracking-tight text-white leading-none"
+            >
+              ray
+            </motion.span>
+          </div>
+
+          <motion.p
+            initial={{ opacity: 0, y: 15 }}
+            animate={isInView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.5, delay: 0.3 }}
+            className="mt-6 md:mt-8 text-zinc-400 text-lg sm:text-xl md:text-2xl max-w-3xl font-light"
           >
-            ray
-          </motion.span>
+            Your 24/7 autonomous SRE agent for deployment, self-healing, and infrastructure security.
+          </motion.p>
         </div>
-
-        <motion.p
-          initial={{ opacity: 0, y: 15 }}
-          animate={isInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.5, delay: 0.3 }}
-          className="mt-6 md:mt-8 text-zinc-400 text-lg sm:text-xl md:text-2xl max-w-3xl font-light"
-        >
-          Your 24/7 autonomous SRE agent for deployment, self-healing, and infrastructure security.
-        </motion.p>
-      </div>
       )}
 
       {/* Main Feature Playlist Grid (Expanded Left Video with Floating Liquid Glass Island + Equalized Heights) */}
@@ -225,19 +237,17 @@ export default function RayShowcase({ hideHeader = false, id = "demo" }: RayShow
                 <button
                   key={item.id}
                   onClick={() => setActiveIndex(index)}
-                  className={`text-left w-full p-3 sm:p-3.5 rounded-xl transition-all duration-200 flex items-start gap-3.5 cursor-pointer border ${
-                    isActive
-                      ? "bg-white/10 border-white text-white shadow-sm"
-                      : "bg-black/40 border-white/5 text-zinc-400 hover:text-white hover:border-white/20 hover:bg-zinc-900/60"
-                  }`}
+                  className={`text-left w-full p-3 sm:p-3.5 rounded-xl transition-all duration-200 flex items-start gap-3.5 cursor-pointer border ${isActive
+                    ? "bg-white/10 border-white text-white shadow-sm"
+                    : "bg-black/40 border-white/5 text-zinc-400 hover:text-white hover:border-white/20 hover:bg-zinc-900/60"
+                    }`}
                 >
                   {/* Left Icon */}
                   <div
-                    className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
-                      isActive
-                        ? "bg-white text-black"
-                        : "bg-zinc-900 text-zinc-400 border border-white/10"
-                    }`}
+                    className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${isActive
+                      ? "bg-white text-black"
+                      : "bg-zinc-900 text-zinc-400 border border-white/10"
+                      }`}
                   >
                     <IconComponent className="w-4 h-4" />
                   </div>
@@ -265,9 +275,8 @@ export default function RayShowcase({ hideHeader = false, id = "demo" }: RayShow
                   {/* Play Indicator */}
                   <div className="flex-shrink-0 self-center">
                     <Play
-                      className={`w-3 h-3 ${
-                        isActive ? "fill-white text-white" : "text-zinc-600"
-                      }`}
+                      className={`w-3 h-3 ${isActive ? "fill-white text-white" : "text-zinc-600"
+                        }`}
                     />
                   </div>
                 </button>

@@ -95,22 +95,20 @@ function CommandBlock() {
         <button
           type="button"
           onClick={() => setOs('unix')}
-          className={`px-3 py-1 rounded-md transition-all ${
-            os === 'unix'
+          className={`px-3 py-1 rounded-md transition-all ${os === 'unix'
               ? 'bg-white/15 text-white font-medium shadow-sm'
               : 'text-zinc-400 hover:text-zinc-200'
-          }`}
+            }`}
         >
           macOS / Linux
         </button>
         <button
           type="button"
           onClick={() => setOs('win')}
-          className={`px-3 py-1 rounded-md transition-all ${
-            os === 'win'
+          className={`px-3 py-1 rounded-md transition-all ${os === 'win'
               ? 'bg-white/15 text-white font-medium shadow-sm'
               : 'text-zinc-400 hover:text-zinc-200'
-          }`}
+            }`}
         >
           Windows
         </button>
@@ -150,9 +148,8 @@ function CommandBlock() {
 
         {/* Subtle background glow on copy */}
         <div
-          className={`absolute inset-0 bg-green-500/5 transition-opacity duration-500 pointer-events-none rounded-xl ${
-            copied ? 'opacity-100' : 'opacity-0'
-          }`}
+          className={`absolute inset-0 bg-green-500/5 transition-opacity duration-500 pointer-events-none rounded-xl ${copied ? 'opacity-100' : 'opacity-0'
+            }`}
         />
       </div>
     </div>

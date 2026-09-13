@@ -6,6 +6,7 @@ import Image from "next/image";
 import Sidebar from "@/components/Sidebar";
 import TerminalPanel from "@/components/TerminalPanel";
 import { StateSpinner } from "@/components/StateSpinner";
+import { getPrimaryProjectUrl } from "@/lib/domains";
 
 interface ClientLayoutProps {
   children: React.ReactNode;
@@ -229,7 +230,7 @@ function LiveDeploymentWidget({
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 {isSuccess && deployment.deployUrl && (
                   <a
-                    href={deployment.deployUrl}
+                    href={getPrimaryProjectUrl(deployment.deployUrl) || deployment.deployUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="text-xs font-bold px-3 py-1.5 rounded-xl bg-white text-black hover:bg-white/90 transition-all flex items-center gap-1.5 active:scale-95"

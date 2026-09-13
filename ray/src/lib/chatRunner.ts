@@ -18,10 +18,16 @@ export interface ChatRunEvent {
   timestamp: number;
 }
 
+export interface ChatRunSubscriber {
+  write: (line: string) => void;
+  close: () => void;
+}
+
 export interface ChatRun {
   sessionId: string;
   userId: string;
   modelId: string;
+  executionMode?: string;
   status: "running" | "completed" | "error";
   startedAt: number;
   completedAt?: number;
@@ -31,7 +37,7 @@ export interface ChatRun {
   thinkingText: string;
   toolBlocks: ToolBlock[];
   activeToolBlock: ToolBlock | null;
-  subscribers: Set<(line: string) => void>;
+  subscribers: Set<ChatRunSubscriber>;
   abortController: AbortController;
 }
 
@@ -42,6 +48,7 @@ export interface StartRunParams {
   modelId?: string;
   userMessageToSave?: string;
   attachedContextItem?: any;
+  executionMode?: string;
 }
 
 class ChatRunnerManager {
@@ -117,6 +124,7 @@ class ChatRunnerManager {
       sessionId,
       userId,
       modelId,
+      executionMode: params.executionMode,
       status: "running",
       startedAt: Date.now(),
       events: [],
@@ -139,7 +147,7 @@ class ChatRunnerManager {
   }
 
   private async executeRunInBackground(run: ChatRun, rawMessages: Array<{ role: string; content: string }>) {
-    const { sessionId, userId, modelId, abortController } = run;
+    const { sessionId, userId, modelId, executionMode, abortController } = run;
 
     try {
       // Load user monitor projects for AI context
@@ -217,6 +225,7 @@ class ChatRunnerManager {
           monitorProjects,
           githubToken: githubToken || undefined,
           githubUsername: githubUsername || undefined,
+          executionMode: executionMode || undefined,
         }),
         signal: abortController.signal,
       });
@@ -373,8 +382,11 @@ class ChatRunnerManager {
       run.status = "completed";
       run.completedAt = Date.now();
 
+      const finishMarker = 'd:{"finishReason":"stop"}';
+      run.events.push({ line: finishMarker, timestamp: Date.now() });
+
       // Emit finish line to subscribers
-      this.broadcastToSubscribers(run, `d:{"finishReason":"stop"}\n\n`);
+      this.broadcastToSubscribers(run, `${finishMarker}\n\n`);
       this.closeSubscribers(run);
 
       // Keep the completed run in memory for 60 seconds so UI checkmark and status queries can see it
@@ -408,7 +420,9 @@ class ChatRunnerManager {
         }
       }
 
-      this.broadcastToSubscribers(run, `3:${JSON.stringify(errorMsg)}\n\n`);
+      const errorLine = `3:${JSON.stringify(errorMsg)}`;
+      run.events.push({ line: errorLine, timestamp: Date.now() });
+      this.broadcastToSubscribers(run, `${errorLine}\n\n`);
       this.closeSubscribers(run);
       this.scheduleRunCleanup(sessionId, 60000);
     }
@@ -470,7 +484,7 @@ class ChatRunnerManager {
   public subscribe(sessionId: string, userId: string): ReadableStream<Uint8Array> {
     const encoder = new TextEncoder();
     const run = this.runs.get(sessionId);
-    let activeListener: ((line: string) => void) | null = null;
+    let subscriber: ChatRunSubscriber | null = null;
 
     return new ReadableStream<Uint8Array>({
       start: (controller) => {
@@ -494,23 +508,30 @@ class ChatRunnerManager {
           return;
         }
 
-        activeListener = (line: string) => {
-          try {
-            controller.enqueue(encoder.encode(line));
-          } catch {
-            if (activeListener) {
-              run.subscribers.delete(activeListener);
+        subscriber = {
+          write: (line: string) => {
+            try {
+              controller.enqueue(encoder.encode(line));
+            } catch {
+              if (subscriber) {
+                run.subscribers.delete(subscriber);
+              }
             }
-          }
+          },
+          close: () => {
+            try {
+              controller.close();
+            } catch {}
+          },
         };
 
-        run.subscribers.add(activeListener);
+        run.subscribers.add(subscriber);
       },
       cancel: () => {
         // When client disconnects/navigates away, unsubscribe listener.
         // DO NOT stop the background run!
-        if (run && activeListener) {
-          run.subscribers.delete(activeListener);
+        if (run && subscriber) {
+          run.subscribers.delete(subscriber);
         }
       },
     });
@@ -529,7 +550,7 @@ class ChatRunnerManager {
   private broadcastToSubscribers(run: ChatRun, line: string) {
     for (const sub of run.subscribers) {
       try {
-        sub(line);
+        sub.write(line);
       } catch {
         run.subscribers.delete(sub);
       }
@@ -537,6 +558,11 @@ class ChatRunnerManager {
   }
 
   private closeSubscribers(run: ChatRun) {
+    for (const sub of run.subscribers) {
+      try {
+        sub.close();
+      } catch {}
+    }
     run.subscribers.clear();
   }
 

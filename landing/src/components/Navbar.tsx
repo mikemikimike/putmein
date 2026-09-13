@@ -35,11 +35,10 @@ function formatStarCount(count: number): string {
 }
 
 const NAV_LINKS = [
+  { label: "Docs", href: "https://docs.putme.in/", external: true },
   { label: "Ray", href: "/ray" },
   { label: "Ozias", href: "/ozias" },
   { label: "Cohen", href: "/cohen" },
-  { label: "Docs", href: "/docs" },
-  { label: "API", href: "/api-docs" },
 ];
 
 export default function Navbar() {
@@ -47,7 +46,7 @@ export default function Navbar() {
   const [stars, setStars] = useState<number | null>(null);
 
   useEffect(() => {
-    const repo = process.env.NEXT_PUBLIC_GITHUB_REPO || "ab-muhammad-hamza/putmein";
+    const repo = process.env.NEXT_PUBLIC_GITHUB_REPO || "putme-in/putmein";
     fetch(`https://api.github.com/repos/${repo}`)
       .then((res) => {
         if (res.ok) return res.json();
@@ -58,7 +57,7 @@ export default function Navbar() {
           setStars(data.stargazers_count);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const displayCount = stars !== null ? formatStarCount(stars) : "0";
@@ -71,20 +70,33 @@ export default function Navbar() {
 
       <ul className="hidden md:flex gap-8 list-none items-center">
         {NAV_LINKS.map((item) => {
+          const isExternal = item.href.startsWith("http");
           const isActive =
-            pathname === item.href || (item.href !== "/" && pathname?.startsWith(item.href));
+            !isExternal &&
+            (pathname === item.href || (item.href !== "/" && pathname?.startsWith(item.href)));
+
           return (
             <li key={item.href}>
-              <Link
-                href={item.href}
-                className={`text-sm transition-all duration-200 ${
-                  isActive
-                    ? "text-white font-semibold drop-shadow-[0_0_12px_rgba(255,255,255,0.4)]"
-                    : "text-zinc-500 font-medium hover:text-zinc-200"
-                }`}
-              >
-                {item.label}
-              </Link>
+              {isExternal ? (
+                <a
+                  href={item.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm font-medium text-zinc-500 hover:text-zinc-200 transition-all duration-200"
+                >
+                  {item.label}
+                </a>
+              ) : (
+                <Link
+                  href={item.href}
+                  className={`text-sm transition-all duration-200 ${isActive
+                      ? "text-white font-semibold drop-shadow-[0_0_12px_rgba(255,255,255,0.4)]"
+                      : "text-zinc-500 font-medium hover:text-zinc-200"
+                    }`}
+                >
+                  {item.label}
+                </Link>
+              )}
             </li>
           );
         })}
@@ -93,7 +105,7 @@ export default function Navbar() {
       <div className="flex items-center gap-3 hidden sm:flex">
         {/* GitHub on the left */}
         <a
-          href="https://github.com/ab-muhammad-hamza/putmein"
+          href="https://github.com/putme-in/putmein"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex flex-shrink-0 items-center justify-center gap-2 px-3.5 py-2 border border-white/20 rounded-lg text-white text-sm font-medium transition-all hover:bg-white/10 hover:border-white/40 group"

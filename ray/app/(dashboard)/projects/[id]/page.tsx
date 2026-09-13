@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@iconify/react";
 import DeployDiagnosisModal from "@/components/DeployDiagnosisModal";
+import { parseProjectDomains, getPrimaryProjectUrl, normalizeDomain } from "@/lib/domains";
+import TerminalView from "@/components/TerminalView";
 
 interface FileNode {
   name: string;
@@ -133,8 +135,8 @@ export default function ProjectDetailPage({
   const { id } = use(params);
   const router = useRouter();
 
-  // Active top-level view: default is settings, or deployment, files, memory, security
-  const [activeTab, setActiveTab] = useState<"settings" | "deployment" | "files" | "memory" | "security">("settings");
+  // Active top-level view: default is settings, or terminal, deployment, files, memory, security
+  const [activeTab, setActiveTab] = useState<"settings" | "terminal" | "deployment" | "files" | "memory" | "security">("settings");
 
   // Security audit state
   const [securityScans, setSecurityScans] = useState<any[]>([]);
@@ -458,24 +460,56 @@ export default function ProjectDetailPage({
     finally { setSavingName(false); }
   };
 
-  // Save Project Domain
+  const [domainError, setDomainError] = useState<string | null>(null);
+
+  // Save Project Domain(s)
   const handleSaveDomain = async (customUrl?: string | null) => {
     const urlToSave = customUrl !== undefined ? (customUrl ? customUrl.trim() : null) : domainInput.trim() || null;
     setSavingDomain(true);
+    setDomainError(null);
     try {
       const res = await fetch(`/api/projects/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectUrl: urlToSave }),
       });
-      if (res.ok) {
-        setDomainSaved(true);
-        setDomainInput(urlToSave || "");
-        setTimeout(() => setDomainSaved(false), 2500);
-        fetchProjectDetails();
+      const data = await res.json();
+      if (!res.ok) {
+        setDomainError(data.error || "Failed to update project domains");
+        return;
       }
-    } catch { /* silent */ }
-    finally { setSavingDomain(false); }
+      setDomainSaved(true);
+      setDomainInput(urlToSave || "");
+      setTimeout(() => setDomainSaved(false), 2500);
+      fetchProjectDetails();
+    } catch {
+      setDomainError("Network error while saving domains");
+    } finally {
+      setSavingDomain(false);
+    }
+  };
+
+  // Add / Append Domain helper
+  const handleAppendDomain = (newDomain: string) => {
+    const currentList = parseProjectDomains(domainInput);
+    const newNorm = normalizeDomain(newDomain);
+    if (!currentList.some((d) => normalizeDomain(d) === newNorm)) {
+      currentList.push(newDomain);
+    }
+    const serialized = currentList.join(", ");
+    setDomainInput(serialized);
+    handleSaveDomain(serialized);
+    handleCheckDomain(newDomain);
+  };
+
+  // Remove individual domain
+  const handleRemoveDomain = (domainToRemove: string) => {
+    const currentList = parseProjectDomains(domainInput);
+    const targetNorm = normalizeDomain(domainToRemove);
+    const filtered = currentList.filter((d) => normalizeDomain(d) !== targetNorm);
+    const serialized = filtered.length > 0 ? filtered.join(", ") : null;
+    setDomainInput(serialized || "");
+    handleSaveDomain(serialized);
   };
 
   // Check Domain DNS Resolution
@@ -501,7 +535,11 @@ export default function ProjectDetailPage({
   const handleCheckExposure = async () => {
     setCheckingExposure(true);
     try {
-      await fetchProjectDetails();
+      const res = await fetch(`/api/projects/${id}?refresh=1`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.network) setNetwork(data.network);
+      }
       setExposureChecked(true);
       setTimeout(() => setExposureChecked(false), 4000);
     } finally {
@@ -509,15 +547,13 @@ export default function ProjectDetailPage({
     }
   };
 
-  // Quick Apply slip.io Domain
-  const handleApplySlipDomain = () => {
+  // Quick Apply sslip.io Domain
+  const handleApplySslipDomain = () => {
     if (!project) return;
     const cleanName = project.name.toLowerCase().replace(/[^a-z0-9-]/g, "-");
     const ip = network.publicIp && network.publicIp !== "127.0.0.1" ? network.publicIp : (network.localIp || "127.0.0.1");
-    const slipDomain = `http://${cleanName}.${ip}.sslip.io`;
-    setDomainInput(slipDomain);
-    handleSaveDomain(slipDomain);
-    handleCheckDomain(slipDomain);
+    const sslipDomain = `http://${cleanName}.${ip}.sslip.io`;
+    handleAppendDomain(sslipDomain);
   };
 
   // Winning allocated port (from container e.g. 4000, pipeline, or fallback)
@@ -526,8 +562,7 @@ export default function ProjectDetailPage({
   // Switch to Allocated Port
   const handleSwitchToAllocatedPort = () => {
     const portUrl = `http://localhost:${allocatedPort}`;
-    setDomainInput(portUrl);
-    handleSaveDomain(portUrl);
+    handleAppendDomain(portUrl);
   };
 
   // Reset to Default / Clear Domain
@@ -701,11 +736,16 @@ export default function ProjectDetailPage({
     });
   };
 
+  const primaryUrl = getPrimaryProjectUrl(
+    project?.projectUrl,
+    project?.container?.port || allocatedPort
+  );
   const effectiveUrl =
-    project?.projectUrl ||
+    primaryUrl ||
     project?.container?.url ||
     (project?.container?.port ? `http://localhost:${project.container.port}` : null) ||
     (allocatedPort ? `http://localhost:${allocatedPort}` : null);
+  const projectDomainList = parseProjectDomains(project?.projectUrl);
 
   if (loading) {
     return (
@@ -756,9 +796,14 @@ export default function ProjectDetailPage({
               </span>
             )}
             {effectiveUrl && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-emerald-500/[0.08] border border-emerald-500/20 text-[11px] font-mono text-emerald-300">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-emerald-500/[0.08] border border-emerald-500/20 text-[11px] font-mono text-emerald-300">
                 <Icon icon="lucide:globe" width={11} height={11} className="text-emerald-400/80" />
                 <span>{effectiveUrl.replace(/^https?:\/\//, "")}</span>
+                {projectDomainList.length > 1 && (
+                  <span className="text-[10px] text-emerald-400/70 font-sans font-medium">
+                    (+{projectDomainList.length - 1} more)
+                  </span>
+                )}
               </span>
             )}
           </div>
@@ -799,6 +844,20 @@ export default function ProjectDetailPage({
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
             <span>Settings & Overview</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("terminal")}
+            className={`relative h-full px-4 text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${activeTab === "terminal"
+              ? "text-white after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-white after:shadow-[0_0_10px_rgba(255,255,255,0.8),0_0_20px_rgba(255,255,255,0.4)]"
+              : "text-white/40 hover:text-white/70 hover:bg-white/[0.02]"
+              }`}
+          >
+            <Icon icon="lucide:terminal" width={14} height={14} />
+            <span>Terminal</span>
+            {project?.container && (
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400" title="Docker Container Active" />
+            )}
           </button>
 
           <button
@@ -1138,28 +1197,44 @@ export default function ProjectDetailPage({
 
                 {/* 3. DOMAIN & NETWORK SECTION */}
                 <div id="section-domain" className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-6 shadow-lg">
-                  <div className="flex items-start justify-between gap-4 mb-4">
+                  <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
                     <div>
-                      <h2 className="font-sans font-bold text-lg text-white tracking-tight mb-1">Domain, slip.io & Port Routing</h2>
-                      <p className="text-xs text-white/50">
-                        Configure domain routing, verify external IP exposure, or switch back to the allocated local port.
+                      <h2 className="font-sans font-bold text-lg text-white tracking-tight mb-1">Domain & Port Routing</h2>
+                      <p className="text-xs text-white/40">
+                        Configure multiple custom domains or sslip.io addresses. Incoming traffic will be reverse-proxied to this project's container.
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={handleCheckExposure}
                       disabled={checkingExposure}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white/[0.05] hover:bg-white/10 text-white/70 hover:text-white border border-white/[0.08] transition-all flex items-center gap-1.5 cursor-pointer flex-shrink-0"
+                      className="ray-btn-ghost text-xs px-3.5 py-1.5 flex items-center gap-1.5 cursor-pointer flex-shrink-0"
                     >
                       {checkingExposure && <SpinIcon size={11} />}
                       <span>{exposureChecked ? "Checked!" : "Check IP Exposure"}</span>
                     </button>
                   </div>
 
+                  {/* Domain Collision / Save Error Banner */}
+                  {domainError && (
+                    <div className="mb-5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-200 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Icon icon="lucide:alert-triangle" className="text-red-400 shrink-0" width={16} height={16} />
+                        <span className="font-mono">{domainError}</span>
+                      </div>
+                      <button
+                        onClick={() => setDomainError(null)}
+                        className="text-white/40 hover:text-white text-xs px-2 py-0.5 rounded cursor-pointer"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
+
                   {/* IP Exposure Status Banner */}
                   <div className={`mb-5 p-4 rounded-2xl flex items-start gap-3 border transition-colors ${network.isPubliclyExposed
-                    ? "bg-emerald-500/[0.03] border-emerald-500/20"
-                    : "bg-amber-500/[0.03] border-amber-500/20"
+                    ? "bg-emerald-500/[0.04] border-emerald-500/20"
+                    : "bg-amber-500/[0.04] border-amber-500/20"
                     }`}>
                     <div className="flex-1 text-xs">
                       <div className="flex items-center gap-2 mb-1.5 flex-wrap">
@@ -1167,99 +1242,191 @@ export default function ProjectDetailPage({
                           }`}>
                           {network.isPubliclyExposed ? "Public Server IP Exposed" : "Local Machine: IP Not Publicly Exposed"}
                         </span>
-                        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${network.isPubliclyExposed
-                          ? "bg-emerald-500/[0.08] border border-emerald-500/20 text-emerald-200"
-                          : "bg-amber-500/[0.08] border border-amber-500/20 text-amber-200"
+                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded-md ${network.isPubliclyExposed
+                          ? "bg-emerald-500/[0.1] border border-emerald-500/20 text-emerald-200"
+                          : "bg-amber-500/[0.1] border border-amber-500/20 text-amber-200"
                           }`}>
                           Local: {network.localIp}
                         </span>
                         {network.publicIp && network.publicIp !== network.localIp && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/10 text-white/60">
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/10 text-white/60">
                             NAT / Router: {network.publicIp}
                           </span>
                         )}
                       </div>
                       <p className="text-white/50 text-[11px] leading-relaxed">
                         {network.isPubliclyExposed
-                          ? "This machine has a direct public IP interface. Custom domains and wildcard slip.io domains will resolve globally across the internet."
-                          : "This machine is running on a private local network (LAN / NAT). External internet traffic cannot reach this machine directly without port forwarding or a public VPS. Domain names and slip.io will only resolve on this local machine or LAN."}
+                          ? "This machine has a direct public IP interface. Custom domains and wildcard sslip.io domains will resolve globally across the internet."
+                          : "This machine is running on a private local network (LAN / NAT). External internet traffic cannot reach this machine directly without port forwarding or a public VPS. Domain names and sslip.io will only resolve on this local machine or LAN."}
                       </p>
                     </div>
                   </div>
 
-                  {/* Allocated Port & Quick Switch Bar */}
-                  <div className="mb-5 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-blue-500/[0.03] border border-blue-500/15">
-                    <div>
-                      <span className="block text-[11px] font-bold text-blue-400/80 uppercase tracking-wider mb-0.5">Allocated Port</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-mono text-blue-200 font-semibold">Port :{allocatedPort}</span>
-                        <span className="text-xs text-blue-300/50 font-mono">(http://localhost:{allocatedPort})</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleSwitchToAllocatedPort}
-                        disabled={savingDomain}
-                        className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-200 border border-blue-500/25 transition-all cursor-pointer"
-                      >
-                        Switch to Port :{allocatedPort}
-                      </button>
-                      {project?.projectUrl && (
-                        <button
-                          type="button"
-                          onClick={handleResetPort}
-                          disabled={savingDomain}
-                          className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-white/50 hover:text-white border border-white/[0.08] transition-all cursor-pointer"
-                        >
-                          Reset to Default
-                        </button>
+                  {/* Configured Domains List */}
+                  <div className="mb-5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-white/50 uppercase font-mono tracking-wider">
+                        Active Configured Domains ({parseProjectDomains(domainInput).length})
+                      </span>
+                      {parseProjectDomains(domainInput).length > 1 && (
+                        <span className="text-[10px] text-white/40 font-mono">
+                          First domain is used for primary &quot;Open App&quot; buttons
+                        </span>
                       )}
                     </div>
+
+                    {parseProjectDomains(domainInput).length === 0 ? (
+                      <div className="p-4 rounded-xl border border-dashed border-white/10 bg-white/[0.01] text-center text-xs text-white/40">
+                        No domains assigned yet. Traffic routes directly via port :{allocatedPort}.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {parseProjectDomains(domainInput).map((domain, idx) => {
+                          const isPrimary = idx === 0;
+                          const href = domain.startsWith("http://") || domain.startsWith("https://")
+                            ? domain
+                            : `http://${domain}`;
+                          return (
+                            <div
+                              key={domain}
+                              className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[#080808] border border-white/[0.06] hover:border-white/15 transition-all"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                {isPrimary ? (
+                                  <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-[10px] font-mono shrink-0">
+                                    Primary
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded bg-white/[0.04] border border-white/10 text-white/40 text-[10px] font-mono shrink-0">
+                                    #{idx + 1}
+                                  </span>
+                                )}
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-mono text-xs text-white hover:text-emerald-300 transition-colors truncate flex items-center gap-1.5"
+                                >
+                                  <span>{domain}</span>
+                                  <Icon icon="lucide:external-link" width={11} height={11} className="text-white/40 shrink-0" />
+                                </a>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleCheckDomain(domain)}
+                                  disabled={checkingDomain}
+                                  className="ray-btn-ghost text-[10.5px] font-mono px-2.5 py-1 rounded-md"
+                                >
+                                  Check DNS
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveDomain(domain)}
+                                  disabled={savingDomain}
+                                  title="Remove domain"
+                                  className="p-1.5 text-white/30 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                                >
+                                  <Icon icon="lucide:x" width={14} height={14} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
-                  {/* slip.io Quick-Generate Banner */}
-                  <div className="mb-5 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-sky-500/[0.03] border border-sky-500/15">
-                    <div>
-                      <span className="text-xs font-mono font-semibold text-sky-300 block mb-0.5">
-                        slip.io / sslip.io Wildcard Auto-Domain
-                      </span>
-                      <p className="text-xs text-sky-200/90 font-mono">
-                        {project?.name.toLowerCase().replace(/[^a-z0-9-]/g, "-")}.{network.publicIp || network.localIp}.sslip.io
-                      </p>
-                      <p className="text-[11px] text-white/45 mt-1">
-                        Instantly routes directly to this IP without registering custom DNS records.
-                      </p>
+                  {/* Quick Add Actions: sslip.io and Port */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mb-5">
+                    {/* sslip.io Quick-Generate Card */}
+                    <div className="p-4.5 rounded-xl flex flex-col justify-between gap-3 bg-[#080808] border border-white/[0.08] shadow-sm">
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <Icon icon="lucide:zap" className="text-white/70" width={13} height={13} />
+                          <span className="text-xs font-mono font-semibold text-white">
+                            sslip.io Wildcard Domain
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-white/70 font-mono truncate">
+                          {project?.name.toLowerCase().replace(/[^a-z0-9-]/g, "-")}.{network.publicIp && network.publicIp !== "127.0.0.1" ? network.publicIp : (network.localIp || "127.0.0.1")}.sslip.io
+                        </p>
+                        <p className="text-[10px] text-white/40 mt-1">
+                          Resolves automatically without creating DNS records.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleApplySslipDomain}
+                        disabled={savingDomain}
+                        className="ray-btn-ghost w-full py-1.5 text-xs text-center font-semibold"
+                      >
+                        + Add sslip.io Domain
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleApplySlipDomain}
-                      disabled={savingDomain}
-                      className="px-3.5 py-1.5 text-xs font-semibold rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-sky-200 border border-sky-500/25 transition-all flex-shrink-0 cursor-pointer"
-                    >
-                      Use slip.io Domain
-                    </button>
+
+                    {/* Allocated Port Card */}
+                    <div className="p-4.5 rounded-xl flex flex-col justify-between gap-3 bg-[#080808] border border-white/[0.08] shadow-sm">
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <Icon icon="lucide:radio" className="text-white/70" width={13} height={13} />
+                          <span className="text-xs font-mono font-semibold text-white">
+                            Local Allocated Port
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-white/70 font-mono">
+                          http://localhost:{allocatedPort}
+                        </p>
+                        <p className="text-[10px] text-white/40 mt-1">
+                          Direct port routing for local development.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSwitchToAllocatedPort}
+                          disabled={savingDomain}
+                          className="ray-btn-ghost flex-1 py-1.5 text-xs text-center font-semibold"
+                        >
+                          + Add Port URL
+                        </button>
+                        {project?.projectUrl && (
+                          <button
+                            type="button"
+                            onClick={handleResetPort}
+                            disabled={savingDomain}
+                            className="ray-btn-ghost px-3 py-1.5 text-xs text-white/40 hover:text-white"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   {/* Custom Domain Input & DNS Verifier */}
                   <div className="space-y-3">
-                    <label className="block text-[11px] font-bold text-white/50 uppercase tracking-wider">Custom Domain / Application URL</label>
+                    <label className="block text-[11px] font-bold text-white/50 uppercase font-mono tracking-wider">
+                      Edit / Add Custom Domains
+                    </label>
                     <div className="flex flex-col sm:flex-row gap-2.5">
                       <input
                         type="text"
-                        placeholder={`e.g. http://localhost:${allocatedPort} or https://app.example.com`}
+                        placeholder="e.g. app.mycompany.com, https://api.mycompany.com"
                         value={domainInput}
                         onChange={(e) => {
                           setDomainInput(e.target.value);
                           setDomainCheckResult(null);
+                          if (domainError) setDomainError(null);
                         }}
-                        className="w-full bg-[#141414] border border-white/10 focus:border-white/25 focus:outline-none text-xs text-white placeholder:text-white/30 font-mono rounded-xl py-2 px-3 transition-all flex-1"
+                        className="ray-input font-mono text-xs flex-1"
                       />
                       <button
                         type="button"
                         onClick={() => handleCheckDomain()}
                         disabled={checkingDomain || !domainInput.trim()}
-                        className="px-3.5 py-2 text-xs font-semibold rounded-xl bg-white/[0.05] hover:bg-white/10 text-white/70 hover:text-white border border-white/[0.08] transition-all flex items-center gap-1.5 flex-shrink-0 cursor-pointer disabled:opacity-50"
+                        className="ray-btn-ghost text-xs px-3.5 py-2 flex items-center gap-1.5 flex-shrink-0 cursor-pointer disabled:opacity-50"
                       >
                         {checkingDomain && <SpinIcon size={12} />}
                         <span>Verify DNS</span>
@@ -1268,12 +1435,16 @@ export default function ProjectDetailPage({
                         type="button"
                         onClick={() => handleSaveDomain()}
                         disabled={savingDomain}
-                        className="bg-white text-black font-bold text-xs px-4 py-2 rounded-xl hover:bg-white/90 active:scale-95 transition-all shadow-sm flex items-center gap-1.5 flex-shrink-0 cursor-pointer disabled:opacity-50"
+                        className="ray-btn-primary text-xs px-4 py-2 flex items-center gap-1.5 flex-shrink-0 cursor-pointer disabled:opacity-50"
                       >
                         {savingDomain && <SpinIcon size={12} />}
-                        <span>{domainSaved ? "Saved!" : "Save Domain"}</span>
+                        <span>{domainSaved ? "Saved!" : "Save Domains"}</span>
                       </button>
                     </div>
+
+                    <p className="text-[11px] text-white/40 leading-relaxed">
+                      Separate multiple domains with commas. Each domain pointing to this server's IP will route to this project. Duplicate domains assigned to another project will be blocked.
+                    </p>
 
                     {/* DNS Verification Result Badge */}
                     {domainCheckResult && (
@@ -1290,11 +1461,11 @@ export default function ProjectDetailPage({
                             </span>
                           ) : domainCheckResult.resolved ? (
                             <span className="text-amber-300 font-semibold flex items-center gap-1.5">
-                              ⚠ Resolves to {domainCheckResult.resolvedIps?.join(", ")}, expecting server IP ({network.publicIp})
+                              ⚠ Resolves to {domainCheckResult.resolvedIps?.join(", ")}, expecting server IP ({network.publicIp || network.localIp})
                             </span>
                           ) : (
                             <span className="text-red-300 font-semibold flex items-center gap-1.5">
-                              ✗ No DNS A-record resolved for this domain. Add an A record pointing to {network.publicIp}.
+                              ✗ No DNS A-record resolved for this domain. Add an A record pointing to {network.publicIp || network.localIp}.
                             </span>
                           )}
                         </div>
@@ -1480,6 +1651,22 @@ export default function ProjectDetailPage({
 
               </div>
             </div>
+          </div>
+        )}
+
+        {/* TAB: TERMINAL VIEW (Docker Container or Host Shell) */}
+        {activeTab === "terminal" && project && (
+          <div className="flex-1 p-6 bg-[#060606] flex flex-col min-h-0 overflow-hidden">
+            <TerminalView
+              title={`${project.name} Terminal`}
+              initialCwd={project.projectPath}
+              projectPath={project.projectPath}
+              projectName={project.name}
+              containerId={project.container?.id || project.container?.name || project.deployment?.containerName || null}
+              containerName={project.container?.name || project.deployment?.containerName || null}
+              hasContainer={!!(project.container || project.deployment?.containerName)}
+              shellMode={project.container || project.deployment?.containerName ? "container" : "host"}
+            />
           </div>
         )}
 

@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1200" y2="675" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#09090b" />
+      <stop offset="100%" stop-color="#020202" />
+    </linearGradient>
+    <linearGradient id="greenGlow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0dd325" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#0dd325" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient id="blueGlow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="675" rx="16" fill="url(#bgGrad)" stroke="#27272a" stroke-width="1.5" />
+
+  <!-- Top App Navigation bar -->
+  <rect x="0" y="0" width="1200" height="60" fill="#121215" />
+  <line x1="0" y1="60" x2="1200" y2="60" stroke="#27272a" stroke-width="1" />
+  <circle cx="36" cy="30" r="6" fill="#ef4444" />
+  <circle cx="56" cy="30" r="6" fill="#f59e0b" />
+  <circle cx="76" cy="30" r="6" fill="#10b981" />
+  <text x="120" y="35" fill="#a1a1aa" font-family="monospace" font-size="14" font-weight="600">ray-dashboard / production-vps-01 (Hetzner ARM64)</text>
+  <rect x="980" y="18" width="180" height="26" rx="6" fill="#0dd325" fill-opacity="0.15" stroke="#0dd325" stroke-opacity="0.3" />
+  <circle cx="996" cy="31" r="4" fill="#0dd325" />
+  <text x="1010" y="35" fill="#0dd325" font-family="monospace" font-size="12" font-weight="bold">AGENT ACTIVE (24/7)</text>
+
+  <!-- Metric Card 1: CPU Load -->
+  <rect x="40" y="90" width="260" height="110" rx="12" fill="#18181b" stroke="#27272a" stroke-width="1" />
+  <text x="60" y="122" fill="#71717a" font-family="monospace" font-size="13">CPU UTILIZATION</text>
+  <text x="60" y="160" fill="#ffffff" font-family="system-ui, sans-serif" font-size="28" font-weight="bold">14.8%</text>
+  <text x="160" y="158" fill="#10b981" font-family="monospace" font-size="13">Normal (4 cores)</text>
+  <rect x="60" y="175" width="220" height="6" rx="3" fill="#27272a" />
+  <rect x="60" y="175" width="36" height="6" rx="3" fill="#3b82f6" />
+
+  <!-- Metric Card 2: Memory -->
+  <rect x="330" y="90" width="260" height="110" rx="12" fill="#18181b" stroke="#27272a" stroke-width="1" />
+  <text x="350" y="122" fill="#71717a" font-family="monospace" font-size="13">MEMORY RESIDENT</text>
+  <text x="350" y="160" fill="#ffffff" font-family="system-ui, sans-serif" font-size="28" font-weight="bold">1.4 GB</text>
+  <text x="470" y="158" fill="#a1a1aa" font-family="monospace" font-size="13">/ 8.0 GB (17%)</text>
+  <rect x="350" y="175" width="220" height="6" rx="3" fill="#27272a" />
+  <rect x="350" y="175" width="42" height="6" rx="3" fill="#a855f7" />
+
+  <!-- Metric Card 3: Network Throughput -->
+  <rect x="620" y="90" width="260" height="110" rx="12" fill="#18181b" stroke="#27272a" stroke-width="1" />
+  <text x="640" y="122" fill="#71717a" font-family="monospace" font-size="13">HTTP THROUGHPUT</text>
+  <text x="640" y="160" fill="#ffffff" font-family="system-ui, sans-serif" font-size="28" font-weight="bold">182 req/s</text>
+  <text x="790" y="158" fill="#10b981" font-family="monospace" font-size="13">0 dropped</text>
+  <rect x="640" y="175" width="220" height="6" rx="3" fill="#27272a" />
+  <rect x="640" y="175" width="90" height="6" rx="3" fill="#0dd325" />
+
+  <!-- Metric Card 4: SRE Latency -->
+  <rect x="910" y="90" width="250" height="110" rx="12" fill="#18181b" stroke="#27272a" stroke-width="1" />
+  <text x="930" y="122" fill="#71717a" font-family="monospace" font-size="13">P99 SRE LATENCY</text>
+  <text x="930" y="160" fill="#ffffff" font-family="system-ui, sans-serif" font-size="28" font-weight="bold">12.4 ms</text>
+  <text x="1055" y="158" fill="#10b981" font-family="monospace" font-size="13">Healthy</text>
+  <rect x="930" y="175" width="210" height="6" rx="3" fill="#27272a" />
+  <rect x="930" y="175" width="45" height="6" rx="3" fill="#f59e0b" />
+
+  <!-- Telemetry Chart Block -->
+  <rect x="40" y="230" width="700" height="400" rx="14" fill="#131316" stroke="#27272a" stroke-width="1" />
+  <text x="70" y="270" fill="#ffffff" font-family="system-ui, sans-serif" font-size="18" font-weight="bold">Real-time Traffic &amp; Socket Saturation</text>
+  <text x="70" y="292" fill="#71717a" font-family="monospace" font-size="12">Rolling 60-minute window • 100ms sample resolution</text>
+
+  <!-- Chart Grid Lines -->
+  <line x1="70" y1="330" x2="700" y2="330" stroke="#27272a" stroke-dasharray="4 4" />
+  <line x1="70" y1="410" x2="700" y2="410" stroke="#27272a" stroke-dasharray="4 4" />
+  <line x1="70" y1="490" x2="700" y2="490" stroke="#27272a" stroke-dasharray="4 4" />
+  <line x1="70" y1="570" x2="700" y2="570" stroke="#3f3f46" />
+
+  <!-- Chart Path Area -->
+  <path d="M70,520 Q150,480 230,490 T390,430 T550,380 T700,360 L700,570 L70,570 Z" fill="url(#greenGlow)" />
+  <path d="M70,520 Q150,480 230,490 T390,430 T550,380 T700,360" stroke="#0dd325" stroke-width="3" fill="none" />
+
+  <!-- Secondary Line -->
+  <path d="M70,550 Q180,530 290,520 T480,500 T620,470 T700,450" stroke="#3b82f6" stroke-width="2" stroke-dasharray="6 4" fill="none" />
+
+  <!-- Process List Table -->
+  <rect x="760" y="230" width="400" height="400" rx="14" fill="#131316" stroke="#27272a" stroke-width="1" />
+  <text x="785" y="270" fill="#ffffff" font-family="system-ui, sans-serif" font-size="18" font-weight="bold">Autonomous SRE Process Tree</text>
+  <text x="785" y="292" fill="#71717a" font-family="monospace" font-size="12">Supervised by Ray Daemon</text>
+
+  <!-- Process Rows -->
+  <rect x="780" y="320" width="360" height="58" rx="8" fill="#18181b" stroke="#27272a" />
+  <circle cx="802" cy="349" r="5" fill="#0dd325" />
+  <text x="820" y="345" fill="#ffffff" font-family="monospace" font-size="13" font-weight="600">shadow-proxy-daemon</text>
+  <text x="820" y="362" fill="#71717a" font-family="monospace" font-size="11">Go Proxy :80/:443 • 0 dropped sockets</text>
+  <text x="1080" y="352" fill="#0dd325" font-family="monospace" font-size="11">ACTIVE</text>
+
+  <rect x="780" y="395" width="360" height="58" rx="8" fill="#18181b" stroke="#27272a" />
+  <circle cx="802" cy="424" r="5" fill="#0dd325" />
+  <text x="820" y="420" fill="#ffffff" font-family="monospace" font-size="13" font-weight="600">api-cluster (Node/Nix)</text>
+  <text x="820" y="437" fill="#71717a" font-family="monospace" font-size="11">4 workers • PID 4012-4015</text>
+  <text x="1080" y="427" fill="#0dd325" font-family="monospace" font-size="11">100%</text>
+
+  <rect x="780" y="470" width="360" height="58" rx="8" fill="#18181b" stroke="#27272a" />
+  <circle cx="802" cy="499" r="5" fill="#3b82f6" />
+  <text x="820" y="495" fill="#ffffff" font-family="monospace" font-size="13" font-weight="600">ray-sre-agent (Ozias)</text>
+  <text x="820" y="512" fill="#71717a" font-family="monospace" font-size="11">Telemetry watchdog &amp; failover engine</text>
+  <text x="1065" y="502" fill="#3b82f6" font-family="monospace" font-size="11">SUPERVISED</text>
+
+  <rect x="780" y="545" width="360" height="58" rx="8" fill="#18181b" stroke="#27272a" />
+  <circle cx="802" cy="574" r="5" fill="#a855f7" />
+  <text x="820" y="570" fill="#ffffff" font-family="monospace" font-size="13" font-weight="600">aegis-security-guard</text>
+  <text x="820" y="587" fill="#71717a" font-family="monospace" font-size="11">eBPF micro-sandbox • Zero-Trust</text>
+  <text x="1080" y="577" fill="#a855f7" font-family="monospace" font-size="11">LOCKED</text>
+</svg>

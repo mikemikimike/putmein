@@ -619,11 +619,28 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 	}
 
 	deployURL := fmt.Sprintf("http://localhost:%d", hostPort)
+	if agent.GetRoutingMode() == "domain" {
+		cleanName := strings.ToLower(regexp.MustCompile(`[^a-zA-Z0-9-]`).ReplaceAllString(req.Name, "-"))
+		cleanName = strings.Trim(cleanName, "-")
+		if cleanName == "" {
+			cleanName = "app"
+		}
+		if agent.GetDomainProvider() == "custom" && agent.GetCustomRootDomain() != "" {
+			deployURL = fmt.Sprintf("http://%s.%s", cleanName, agent.GetCustomRootDomain())
+		} else {
+			// sslip.io mode
+			hostIP := "127.0.0.1"
+			if out, err := exec.Command("curl", "-s", "--max-time", "2", "https://api.ipify.org").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
+				hostIP = strings.TrimSpace(string(out))
+			}
+			deployURL = fmt.Sprintf("http://%s.%s.sslip.io", cleanName, hostIP)
+		}
+	}
 
 	emit(DeployStepEvent{
 		Step:      StepLaunching,
 		Status:    "success",
-		Message:   fmt.Sprintf("Container running (ID: %s) on %s", containerID, deployURL),
+		Message:   fmt.Sprintf("Container running (ID: %s) on %s (port :%d)", containerID, deployURL, hostPort),
 		Port:      hostPort,
 		URL:       deployURL,
 		Container: containerName,
@@ -633,14 +650,15 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 	emit(DeployStepEvent{
 		Step:    StepHealthcheck,
 		Status:  "running",
-		Message: fmt.Sprintf("Waiting for %s to become healthy...", deployURL),
+		Message: fmt.Sprintf("Waiting for container on port :%d to become healthy...", hostPort),
 	})
 
 	client := &http.Client{Timeout: 2 * time.Second}
 	healthy := false
+	localCheckURL := fmt.Sprintf("http://localhost:%d", hostPort)
 	for i := 0; i < 15; i++ {
 		time.Sleep(1 * time.Second)
-		resp, hErr := client.Get(deployURL)
+		resp, hErr := client.Get(localCheckURL)
 		if hErr == nil {
 			_ = resp.Body.Close()
 			healthy = true
@@ -652,14 +670,14 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 		emit(DeployStepEvent{
 			Step:    StepHealthcheck,
 			Status:  "success",
-			Message: fmt.Sprintf("Service is healthy & responding at %s", deployURL),
+			Message: fmt.Sprintf("Service is healthy & responding at %s (internal port :%d)", deployURL, hostPort),
 			URL:     deployURL,
 		})
 	} else {
 		emit(DeployStepEvent{
 			Step:    StepHealthcheck,
 			Status:  "running",
-			Message: "Container started (healthcheck timed out, but container is running)",
+			Message: fmt.Sprintf("Container started (healthcheck timed out on port :%d, but container is running)", hostPort),
 			URL:     deployURL,
 		})
 	}

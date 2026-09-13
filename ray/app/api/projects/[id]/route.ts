@@ -4,63 +4,10 @@ import os from "os";
 import { verifyToken } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { detectProjectStack } from "@/lib/project-detector";
+import { findDomainConflict, getPrimaryProjectUrl } from "@/lib/domains";
+import { detectServerIp } from "@/lib/network";
 
 const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
-
-function getLocalIp(): string {
-  try {
-    const interfaces = os.networkInterfaces();
-    for (const name of Object.keys(interfaces)) {
-      for (const iface of interfaces[name] || []) {
-        if (iface.family === "IPv4" && !iface.internal) {
-          return iface.address;
-        }
-      }
-    }
-  } catch { /* fallback */ }
-  return "127.0.0.1";
-}
-
-function isPrivateIp(ip: string): boolean {
-  if (!ip) return true;
-  if (
-    ip === "127.0.0.1" ||
-    ip === "localhost" ||
-    ip.startsWith("10.") ||
-    ip.startsWith("192.168.") ||
-    ip.startsWith("169.254.")
-  ) {
-    return true;
-  }
-  if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip)) return true;
-  return false;
-}
-
-async function detectServerIp(): Promise<{
-  localIp: string;
-  publicIp: string;
-  isPrivateNetwork: boolean;
-  isPubliclyExposed: boolean;
-}> {
-  const localIp = getLocalIp();
-  let publicIp = localIp;
-  try {
-    const res = await fetch("https://api.ipify.org?format=json", {
-      signal: AbortSignal.timeout(1500),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.ip) publicIp = data.ip;
-    }
-  } catch {
-    // If public lookup times out, use local IP
-  }
-
-  const isPrivateNetwork = isPrivateIp(localIp);
-  const isPubliclyExposed = !isPrivateNetwork;
-
-  return { localIp, publicIp, isPrivateNetwork, isPubliclyExposed };
-}
 
 // GET /api/projects/[id] — project details with connected container, CI/CD, GitHub, and server IP
 export async function GET(
@@ -167,7 +114,8 @@ export async function GET(
     });
 
     // 4. Server IP detection for sslip.io and domain mapping
-    const { localIp, publicIp, isPrivateNetwork, isPubliclyExposed } = await detectServerIp();
+    const forceRefresh = req.nextUrl?.searchParams?.get("refresh") === "1";
+    const { localIp, publicIp, isPrivateNetwork, isPubliclyExposed } = await detectServerIp(forceRefresh);
 
     const stackInfo = detectProjectStack(project.projectPath, {
       projectName: project.name,
@@ -235,7 +183,25 @@ export async function PATCH(
       updateData.name = name.trim();
     }
     if (projectUrl !== undefined) {
-      updateData.projectUrl = projectUrl ? projectUrl.trim() : null;
+      const cleanUrl = projectUrl ? projectUrl.trim() : null;
+      if (cleanUrl) {
+        const otherProjects = await prisma.rayMonitorProject.findMany({
+          where: {
+            userId: user.userId,
+            id: { not: id },
+          },
+          select: { id: true, name: true, projectUrl: true },
+        });
+
+        const conflict = findDomainConflict(cleanUrl, id, otherProjects);
+        if (conflict.hasConflict) {
+          return NextResponse.json(
+            { error: `Domain "${conflict.domain}" is already assigned to project "${conflict.projectName}".` },
+            { status: 409 }
+          );
+        }
+      }
+      updateData.projectUrl = cleanUrl;
     }
     if (enabled !== undefined) {
       updateData.enabled = !!enabled;
@@ -249,6 +215,23 @@ export async function PATCH(
       where: { id },
       data: updateData,
     });
+
+    if (updateData.projectUrl !== undefined) {
+      const primaryUrl = getPrimaryProjectUrl(updateData.projectUrl as string);
+      await prisma.rayDeployment.updateMany({
+        where: {
+          userId: user.userId,
+          OR: [
+            { projectId: id },
+            { name: existing.name },
+            { name: existing.name.toLowerCase() },
+          ],
+        },
+        data: {
+          deployUrl: primaryUrl,
+        },
+      }).catch(() => {});
+    }
 
     // Notify Brain if running
     try {

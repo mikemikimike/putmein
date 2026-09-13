@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import DeploymentNodeGraph, { DeployStepState } from "./DeploymentNodeGraph";
 import { StateSpinner } from "./StateSpinner";
+import { getPrimaryProjectUrl } from "@/lib/domains";
+import { Icon } from "@iconify/react";
 
 /* ── Types ────────────────────────────────────────── */
 export interface ToolLine {
@@ -24,7 +26,16 @@ export interface TerminalPanelProps {
   onWidthChange: (w: number) => void;
 }
 
-type ToolTab = "terminal" | "monitor" | "deploy";
+export type ToolTab = "plan" | "terminal" | "deploy" | "monitor";
+
+export interface PlanItem {
+  id: string;
+  title: string;
+  content: string;
+  checklist: Array<{ text: string; done: boolean }>;
+  status: "pending" | "in_progress" | "completed";
+  createdAt: number;
+}
 
 type LogEntry =
   | { kind: "cmd"; cmd: string; user: string; host: string; id: string }
@@ -108,9 +119,10 @@ export default function TerminalPanel({
   width,
   onWidthChange,
 }: TerminalPanelProps) {
-  // Always provide all 3 first-class tools: Terminal, Deploy, and Monitor
-  const [activatedTools, setActivatedTools] = useState<ToolTab[]>(["terminal", "deploy", "monitor"]);
+  // Always provide all first-class tools: Plan, Terminal, Deploy, and Monitor
+  const [activatedTools, setActivatedTools] = useState<ToolTab[]>(["plan", "terminal", "deploy", "monitor"]);
   const [activeTab, setActiveTab] = useState<ToolTab>("terminal");
+  const [activePlan, setActivePlan] = useState<PlanItem | null>(null);
 
   // Terminal state
   const [log, setLog] = useState<LogEntry[]>([]);
@@ -166,6 +178,22 @@ export default function TerminalPanel({
   const isMonitorUserScrolledUpRef = useRef(false);
   const isDeployUserScrolledUpRef = useRef(false);
 
+  // AI-managed terminal notice state
+  const [showAiNotice, setShowAiNotice] = useState(false);
+  const aiNoticeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerAiNotice = useCallback(() => {
+    setShowAiNotice(true);
+    if (aiNoticeTimeoutRef.current) clearTimeout(aiNoticeTimeoutRef.current);
+    aiNoticeTimeoutRef.current = setTimeout(() => setShowAiNotice(false), 2500);
+  }, []);
+
+  const handleTerminalKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // If copying, selecting all, or refreshing (Cmd+C, Cmd+A, Cmd+R), allow without alert
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    triggerAiNotice();
+  }, [triggerAiNotice]);
+
   const selectedProject = projects.find((p) => p.id === selectedProjectId) || projects[0] || null;
 
   const [isMobile, setIsMobile] = useState(false);
@@ -195,7 +223,7 @@ export default function TerminalPanel({
     return "default";
   }, []);
 
-  const ALL_TOOLS: ToolTab[] = ["terminal", "deploy", "monitor"];
+  const ALL_TOOLS: ToolTab[] = ["plan", "terminal", "deploy", "monitor"];
 
   // Restore active tools & tab when chat/session changes
   const restoreTabsForSession = useCallback((sid?: string) => {
@@ -226,6 +254,44 @@ export default function TerminalPanel({
     window.addEventListener("ray:session-switched", handleSessionSwitch);
     return () => window.removeEventListener("ray:session-switched", handleSessionSwitch);
   }, [restoreTabsForSession]);
+
+  // Listen to live plan update events from chat
+  useEffect(() => {
+    const handlePlanUpdate = (e: Event) => {
+      const detail = (e as CustomEvent<{ title?: string; content?: string; checklist?: string[]; status?: "pending" | "in_progress" | "completed" }>).detail;
+      if (!detail) return;
+      const items = (detail.checklist || []).map((t) => ({ text: t, done: false }));
+      const newPlan: PlanItem = {
+        id: Math.random().toString(36).substring(2, 9),
+        title: detail.title || "Implementation Plan",
+        content: detail.content || "",
+        checklist: items,
+        status: detail.status || "pending",
+        createdAt: Date.now(),
+      };
+      setActivePlan(newPlan);
+      setActiveTab("plan");
+    };
+    window.addEventListener("ray:plan-updated", handlePlanUpdate);
+    const handleProceedPlan = () => {
+      setActivePlan((prev) => (prev ? { ...prev, status: "in_progress" } : null));
+    };
+    window.addEventListener("ray:proceed-plan", handleProceedPlan);
+    return () => {
+      window.removeEventListener("ray:plan-updated", handlePlanUpdate);
+      window.removeEventListener("ray:proceed-plan", handleProceedPlan);
+    };
+  }, []);
+
+  const handleProceedWithPlan = () => {
+    if (!activePlan || activePlan.status !== "pending") return;
+    setActivePlan((prev) => (prev ? { ...prev, status: "in_progress" } : null));
+    window.dispatchEvent(
+      new CustomEvent("ray:proceed-plan", {
+        detail: { title: activePlan.title },
+      })
+    );
+  };
 
   // Save tabs per session whenever activeTab changes
   const saveTabsForSession = useCallback((tools: ToolTab[], tab: ToolTab) => {
@@ -1127,7 +1193,7 @@ export default function TerminalPanel({
         style={{ borderColor: "rgba(255,255,255,0.07)", background: "#080808" }}
       >
         <div className="flex items-center gap-1.5 overflow-x-auto">
-          {(["terminal", "deploy", "monitor"] as ToolTab[]).map((tool) => (
+          {(["plan", "terminal", "deploy", "monitor"] as ToolTab[]).map((tool) => (
             <button
               key={tool}
               onClick={() => handleTabChange(tool)}
@@ -1138,6 +1204,18 @@ export default function TerminalPanel({
                 border: activeTab === tool ? "1px solid rgba(255,255,255,0.12)" : "1px solid transparent",
               }}
             >
+              {tool === "plan" && (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                    <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+                  </svg>
+                  <span>Plan</span>
+                  {activePlan && activePlan.status === "pending" && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  )}
+                </>
+              )}
               {tool === "terminal" && (
                 <>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1220,9 +1298,135 @@ export default function TerminalPanel({
         </div>
       </div>
 
+      {/* ── Tab 0: Plan View ── */}
+      {activeTab === "plan" && (
+        <div className="flex-1 min-h-0 flex flex-col p-4 bg-[#0c0c0c] overflow-y-auto space-y-4 font-sans">
+          {activePlan ? (
+            <div className="space-y-4">
+              <div className="flex items-start justify-between pb-3.5 border-b border-white/[0.06] gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <h3 className="text-sm font-bold text-white tracking-tight truncate">{activePlan.title}</h3>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10.5px] font-mono font-medium ${
+                        activePlan.status === "pending"
+                          ? "bg-amber-500/10 text-amber-300 border border-amber-500/20"
+                          : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
+                      }`}
+                    >
+                      {activePlan.status === "pending" ? "Awaiting Approval" : "In Progress"}
+                    </span>
+                  </div>
+                  <p className="text-[11.5px] text-white/40 leading-relaxed">
+                    Review proposed steps and checklist before executing actions.
+                  </p>
+                </div>
+
+                {activePlan.status === "pending" ? (
+                  <button
+                    type="button"
+                    onClick={handleProceedWithPlan}
+                    className="ray-btn-primary px-3.5 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer shrink-0 shadow-sm"
+                  >
+                    <Icon icon="lucide:play" width={12} height={12} className="fill-current" />
+                    <span>Proceed with Plan</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono shrink-0 select-none">
+                    <Icon icon="lucide:check" width={12} height={12} className="stroke-[2.5]" />
+                    <span>Plan Approved</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Checklist */}
+              {activePlan.checklist.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-[11px] font-bold text-white/50 uppercase font-mono tracking-wider">Plan Checklist</h4>
+                    <span className="text-[10px] font-mono text-white/40">
+                      {activePlan.checklist.filter((i) => i.done).length} of {activePlan.checklist.length} done
+                    </span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {activePlan.checklist.map((item, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => {
+                          setActivePlan((prev) => {
+                            if (!prev) return null;
+                            const updated = [...prev.checklist];
+                            updated[idx] = { ...updated[idx], done: !updated[idx].done };
+                            return { ...prev, checklist: updated };
+                          });
+                        }}
+                        className="flex items-start gap-2.5 p-2.5 rounded-xl bg-[#080808] hover:bg-white/[0.04] border border-white/[0.06] hover:border-white/15 transition-all cursor-pointer select-none group"
+                      >
+                        <div
+                          className={`w-4 h-4 rounded mt-0.5 flex items-center justify-center border transition-all ${
+                            item.done
+                              ? "bg-white border-white text-black"
+                              : "border-white/30 bg-white/[0.02] group-hover:border-white/50"
+                          }`}
+                        >
+                          {item.done && (
+                            <Icon icon="lucide:check" width={11} height={11} className="stroke-[3]" />
+                          )}
+                        </div>
+                        <span className={`text-xs leading-relaxed transition-colors ${item.done ? "text-white/40 line-through" : "text-white/90"}`}>
+                          {item.text}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Plan Details */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[11px] font-bold text-white/50 uppercase font-mono tracking-wider">Plan Details</h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activePlan.content) {
+                        navigator.clipboard.writeText(activePlan.content);
+                      }
+                    }}
+                    className="ray-btn-ghost text-[10.5px] font-mono px-2 py-0.5"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <div className="p-3.5 rounded-xl bg-[#080808] border border-white/[0.06] text-xs text-white/70 whitespace-pre-wrap leading-relaxed font-mono">
+                  {activePlan.content}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-white/30 space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center text-white/30">
+                <Icon icon="lucide:clipboard-list" width={22} height={22} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-white/60 mb-0.5">No Active Plan</p>
+                <p className="text-[11.5px] text-white/40 max-w-xs leading-relaxed">
+                  When you ask the AI to build or deploy in Plan Mode, the structured plan, checklists, and goals will appear here for review.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Tab 1: Terminal View ── */}
       {activeTab === "terminal" && (
-        <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden bg-[#0c0c0c]">
+        <div
+          tabIndex={0}
+          onKeyDown={handleTerminalKeyDown}
+          onClick={triggerAiNotice}
+          className="flex-1 min-h-0 flex flex-col relative overflow-hidden bg-[#0c0c0c] outline-none cursor-default"
+        >
           <div
             ref={terminalScrollRef}
             onScroll={handleTerminalScroll}
@@ -1235,13 +1439,41 @@ export default function TerminalPanel({
               lineHeight: "1.6",
             }}
           >
+            {/* AI Managed Execution Banner */}
+            <div className="mb-3.5 p-3 rounded-xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-between gap-3 text-xs select-none">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-6 h-6 rounded-md bg-white/[0.06] border border-white/10 flex items-center justify-center text-white/80 shrink-0">
+                  <Icon icon="lucide:bot" width={13} height={13} />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-semibold text-white/90 text-[11.5px] flex items-center gap-1.5 font-sans">
+                    <span>AI Agent Execution Stream</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  </div>
+                  <p className="text-[10.5px] text-white/40 truncate font-sans">
+                    This terminal is used exclusively by the AI Agent for command execution.
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.04] border border-white/10 text-white/50 shrink-0">
+                AI Managed
+              </span>
+            </div>
+
             {bannerRef.current && (
               <div style={{ color: "rgba(255,255,255,0.35)", marginBottom: 2 }}>
                 {bannerRef.current}
               </div>
             )}
 
-            {log.length === 0 && <Prompt u={prompt.user} h={prompt.host} />}
+            {log.length === 0 && (
+              <div className="flex items-center gap-1">
+                <Prompt u={prompt.user} h={prompt.host} />
+                <span className="text-white/30 italic text-[11px] select-none ml-1">
+                  [This terminal is used by AI — enter prompt in chat]
+                </span>
+              </div>
+            )}
 
             {log.map((entry, idx) => renderTerminalEntry(entry, idx))}
 
@@ -1261,6 +1493,16 @@ export default function TerminalPanel({
             )}
             <div ref={terminalBottomAnchorRef} style={{ height: 1, minHeight: 1 }} />
           </div>
+
+          {/* Toast Notification when user tries to type in AI terminal */}
+          {showAiNotice && (
+            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-50 animate-fade-in pointer-events-none">
+              <div className="px-3.5 py-2 rounded-xl bg-[#141414] border border-white/20 text-white shadow-2xl flex items-center gap-2 text-xs font-sans">
+                <Icon icon="lucide:bot" width={14} height={14} className="text-white/80 shrink-0" />
+                <span>This terminal is used by AI. Please type your requests in the chat.</span>
+              </div>
+            </div>
+          )}
 
           {/* Floating Scroll to Bottom Arrow Button for Terminal */}
           {showTerminalScrollBottom && (
@@ -1710,7 +1952,7 @@ export default function TerminalPanel({
                           <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                             {dep.deployUrl && (
                               <a
-                                href={dep.deployUrl}
+                                href={getPrimaryProjectUrl(dep.deployUrl, dep.hostPort) || dep.deployUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-xs px-2.5 py-1 rounded-lg bg-white text-black hover:bg-white/90 transition-colors no-underline font-bold"

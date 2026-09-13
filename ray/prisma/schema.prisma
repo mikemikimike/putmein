@@ -77,6 +77,32 @@ model Waitlist {
 }
 
 // =============================================
+// OZAIAS & COHEN WAITLIST TABLES
+// =============================================
+
+model OziasWaitlist {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String?
+  location  String?
+  userAgent String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@map("ozias_waiting_list")
+}
+
+model CohenWaitlist {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String?
+  location  String?
+  userAgent String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@map("cohen_waiting_list")
+}
+
+// =============================================
 // NEW RAY-SPECIFIC TABLES
 // =============================================
 

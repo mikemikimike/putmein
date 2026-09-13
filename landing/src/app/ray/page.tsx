@@ -125,7 +125,7 @@ export default function RayPage() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 relative z-10">
             <a
-              href="https://github.com/ab-muhammad-hamza/putmein"
+              href="https://github.com/putme-in/putmein"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center gap-2 px-8 py-3.5 bg-white text-black font-semibold rounded-xl text-sm transition-all hover:bg-zinc-200 hover:scale-105 shadow-[0_0_30px_rgba(255,255,255,0.3)]"

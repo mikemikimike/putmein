@@ -394,10 +394,23 @@ export const GroupedToolAccordion = ({ blocks }: { blocks: ToolBlock[] }) => (
   <TopProcessAccordion blocks={blocks} />
 );
 
+export interface PlanChecklistItem {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
+export interface ExtractedPlan {
+  title: string;
+  items: PlanChecklistItem[];
+  rawText: string;
+}
+
 export function extractCleanAssistantContent(content: string): {
   cleanText: string;
   extractedThinking?: string;
   parsedBlocks: ToolBlock[];
+  extractedPlan?: ExtractedPlan;
 } {
   if (!content) return { cleanText: "", parsedBlocks: [] };
 
@@ -431,6 +444,35 @@ export function extractCleanAssistantContent(content: string): {
   text = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
   // Handle unclosed <think> during streaming
   text = text.replace(/<think>[\s\S]*$/gi, "");
+
+  // 1.5. Extract <plan...>...</plan>
+  let extractedPlan: ExtractedPlan | undefined = undefined;
+  const planMatch = text.match(/<plan(?:\s+title=["']([^"']*)["'])?>([\s\S]*?)<\/plan>/i) || text.match(/<plan(?:\s+title=["']([^"']*)["'])?>([\s\S]*)$/i);
+  if (planMatch) {
+    const title = planMatch[1] || "Execution Plan";
+    const body = (planMatch[2] || "").trim();
+    const lines = body.split("\n").map((l) => l.trim()).filter(Boolean);
+    const items: PlanChecklistItem[] = lines.map((line, idx) => {
+      const isChecked = /^[*-]?\s*\[[xX]\]/.test(line);
+      const cleanLine = line
+        .replace(/^[*-]?\s*\[[ xX]\]\s*/, "")
+        .replace(/^\d+[\.\)]\s*/, "")
+        .replace(/^[*-]\s*/, "");
+      return {
+        id: `item-${idx}`,
+        text: cleanLine || line,
+        completed: isChecked,
+      };
+    });
+    extractedPlan = {
+      title,
+      items,
+      rawText: body,
+    };
+    // Strip <plan> from text so it doesn't render raw XML
+    text = text.replace(/<plan(?:\s+title=["']([^"']*)["'])?>[\s\S]*?<\/plan>/gi, "");
+    text = text.replace(/<plan(?:\s+title=["']([^"']*)["'])?>[\s\S]*$/gi, "");
+  }
 
   // 2. Extract tool blocks if any exist in text
   const tagRegex = /<(exec|deploy|monitor_add|write_file|read_file|delete_file|create_dir)([^>]*)>([\s\S]*?)<\/\1>|<(deploy|monitor_add)([^>]*)\/?>/gi;
@@ -471,15 +513,179 @@ export function extractCleanAssistantContent(content: string): {
   text = text.replace(/<(exec|deploy|monitor_add|write_file|read_file|delete_file|create_dir)([^>]*)>([\s\S]*?)<\/\1>/gi, "");
   text = text.replace(/<(deploy|monitor_add)([^>]*)\/?>/gi, "");
 
-  // 3. Remove unclosed tags or stray leaked XML tags (e.g. </write_file>, <write_file path="...">)
-  text = text.replace(/<\/(write_file|read_file|delete_file|create_dir|exec|deploy|monitor_add|think)>/gi, "");
-  text = text.replace(/<(write_file|read_file|delete_file|create_dir|exec|deploy|monitor_add)[^>]*>/gi, "");
+  // 3. Remove unclosed tags or stray leaked XML tags
+  text = text.replace(/<\/(write_file|read_file|delete_file|create_dir|exec|deploy|monitor_add|think|plan)>/gi, "");
+  text = text.replace(/<(write_file|read_file|delete_file|create_dir|exec|deploy|monitor_add|plan)[^>]*>/gi, "");
 
   return {
     cleanText: text.trim(),
     extractedThinking: extractedThinking || undefined,
     parsedBlocks,
+    extractedPlan,
   };
+}
+
+export function PlanCard({
+  plan,
+  isStreaming,
+  onProceed,
+  hasProceeded = false,
+}: {
+  plan: ExtractedPlan;
+  isStreaming?: boolean;
+  onProceed: () => void;
+  hasProceeded?: boolean;
+}) {
+  const [checklist, setChecklist] = useState<PlanChecklistItem[]>(plan.items);
+  const [proceeded, setProceeded] = useState(hasProceeded);
+
+  useEffect(() => {
+    setChecklist(plan.items);
+  }, [plan.items]);
+
+  useEffect(() => {
+    if (hasProceeded) {
+      setProceeded(true);
+    }
+  }, [hasProceeded]);
+
+  const toggleItem = (idx: number) => {
+    setChecklist((prev) =>
+      prev.map((it, i) => (i === idx ? { ...it, completed: !it.completed } : it))
+    );
+  };
+
+  const isDone = Boolean(proceeded || hasProceeded);
+
+  const handleProceedClick = () => {
+    if (isDone) return;
+    setProceeded(true);
+    onProceed();
+    window.dispatchEvent(
+      new CustomEvent("ray:proceed-plan", {
+        detail: { title: plan.title },
+      })
+    );
+  };
+
+  return (
+    <div className="w-full my-3.5 rounded-2xl overflow-hidden animate-fade-in border border-white/[0.08] bg-[#0c0c0c] shadow-2xl">
+      {/* Header */}
+      <div className="px-4 py-3 bg-white/[0.02] border-b border-white/[0.06] flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-white/[0.06] border border-white/10 flex items-center justify-center text-white flex-shrink-0">
+            <Icon icon="lucide:clipboard-check" width={14} height={14} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-white truncate font-sans flex items-center gap-2">
+              <span>{plan.title || "Execution Plan"}</span>
+              {isDone && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 inline-flex items-center gap-1 shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Approved
+                </span>
+              )}
+            </div>
+            <div className="text-[10.5px] text-white/40 font-mono mt-0.5">
+              {isDone ? "Plan approved • Executing commands in Tool Window" : "Plan Mode • Review checklist before execution"}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              window.dispatchEvent(
+                new CustomEvent("ray:plan-updated", {
+                  detail: {
+                    title: plan.title,
+                    content: plan.rawText,
+                    checklist: checklist.map((c) => c.text),
+                    status: isDone ? "in_progress" : "pending",
+                  },
+                })
+              );
+              window.dispatchEvent(new Event("ray:open-terminal"));
+            }}
+            title="Open in Tool Window tab"
+            className="ray-btn-ghost text-[11px] font-mono px-2.5 py-1 flex items-center gap-1.5 cursor-pointer"
+          >
+            <span>Plan Tab</span>
+            <Icon icon="lucide:external-link" width={11} height={11} />
+          </button>
+        </div>
+      </div>
+
+      {/* Checklist items */}
+      <div className="p-4 space-y-2">
+        {checklist.length > 0 ? (
+          checklist.map((item, idx) => (
+            <div
+              key={item.id || idx}
+              onClick={() => toggleItem(idx)}
+              className="flex items-start gap-2.5 p-2.5 rounded-xl bg-[#080808] hover:bg-white/[0.04] border border-white/[0.06] hover:border-white/15 transition-all cursor-pointer group select-none"
+            >
+              <div
+                className={`w-4 h-4 mt-0.5 rounded flex items-center justify-center flex-shrink-0 transition-all border ${
+                  item.completed
+                    ? "bg-white border-white text-black"
+                    : "border-white/30 bg-white/[0.02] group-hover:border-white/50"
+                }`}
+              >
+                {item.completed && (
+                  <Icon icon="lucide:check" width={11} height={11} className="stroke-[3]" />
+                )}
+              </div>
+              <span
+                className={`text-xs leading-relaxed transition-colors ${
+                  item.completed ? "text-white/40 line-through" : "text-white/90"
+                }`}
+              >
+                {item.text}
+              </span>
+            </div>
+          ))
+        ) : (
+          <div className="text-xs text-white/60 whitespace-pre-wrap font-mono py-1">
+            {plan.rawText}
+          </div>
+        )}
+      </div>
+
+      {/* Action Footer */}
+      <div className="px-4 py-3 bg-[#080808] border-t border-white/[0.06] flex items-center justify-between gap-3">
+        {isDone ? (
+          <>
+            <span className="text-[11px] text-white/40 font-mono flex items-center gap-1.5">
+              <span>Execution in progress</span>
+              <span className="w-1 h-1 rounded-full bg-emerald-400" />
+              <span>Active in Tool Window</span>
+            </span>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono select-none shrink-0">
+              <Icon icon="lucide:check" width={12} height={12} className="stroke-[2.5]" />
+              <span>Plan Approved</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <span className="text-[11px] text-white/40">
+              Click proceed to start execution or reply to adjust
+            </span>
+            <button
+              type="button"
+              disabled={isStreaming}
+              onClick={handleProceedClick}
+              className="ray-btn-primary px-3.5 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Icon icon="lucide:play" width={12} height={12} className="fill-current" />
+              <span>Proceed with Plan ↗</span>
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function parseMessageContentToParts(content: string): MessagePart[] {
@@ -510,11 +716,13 @@ interface Message {
   errorMessage?: string;
   isRetryable?: boolean;
   attachedContext?: {
-    type: "project" | "container" | "monitor" | "github";
+    type: "project" | "container" | "monitor" | "github" | "deploy" | "deep-deploy";
     id: string;
     name: string;
     detail?: string;
+    deployMode?: "deploy" | "deep-deploy";
   };
+  deployMode?: "deploy" | "deep-deploy";
   // Approval card fields (role=assistant, kind="approval")
   kind?: "approval" | "monitor-add-approval";
   approvalId?: string;
@@ -545,6 +753,24 @@ function MarkdownContent({ content }: { content: string }) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
+          a(props) {
+            const { href, children, ...rest } = props;
+            const isExternal = href ? (/^https?:\/\//i.test(href) || href.startsWith("//")) : false;
+            return (
+              <a
+                href={href}
+                target={isExternal ? "_blank" : undefined}
+                rel={isExternal ? "noopener noreferrer" : undefined}
+                className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2 transition-colors inline-flex items-center gap-1 font-medium cursor-pointer"
+                {...rest}
+              >
+                {children}
+                {isExternal && (
+                  <Icon icon="lucide:external-link" className="w-3 h-3 inline-block opacity-70 shrink-0" />
+                )}
+              </a>
+            );
+          },
           code(props) {
             const { children, className, node, ...rest } = props;
             const match = /language-(\w+)/.exec(className || "");
@@ -697,43 +923,67 @@ function ApprovalCard({
             : "✕  Denied — waiting for agent response"}
         </div>
       ) : (
-        <div style={{ display: "flex", gap: 6 }}>
-          <button
-            onClick={() => respond(true)}
-            disabled={!!loading}
-            style={{
-              flex: 1,
-              padding: "6px 0",
-              borderRadius: 6,
-              border: "1px solid rgba(255,255,255,0.15)",
-              background: loading === "approve" ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.06)",
-              color: loading === "approve" ? "#fff" : "rgba(255,255,255,0.7)",
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: loading ? "not-allowed" : "pointer",
-              transition: "background 120ms, color 120ms",
-            }}
-          >
-            {loading === "approve" ? "Running…" : "Allow"}
-          </button>
-          <button
-            onClick={() => respond(false)}
-            disabled={!!loading}
-            style={{
-              flex: 1,
-              padding: "6px 0",
-              borderRadius: 6,
-              border: "1px solid rgba(255,255,255,0.08)",
-              background: "transparent",
-              color: "rgba(255,255,255,0.3)",
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: loading ? "not-allowed" : "pointer",
-              transition: "background 120ms, color 120ms",
-            }}
-          >
-            {loading === "deny" ? "Denying…" : "Deny"}
-          </button>
+        <div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              onClick={() => respond(true)}
+              disabled={!!loading}
+              style={{
+                flex: 1,
+                padding: "6px 0",
+                borderRadius: 6,
+                border: "1px solid rgba(255,255,255,0.15)",
+                background: loading === "approve" ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.06)",
+                color: loading === "approve" ? "#fff" : "rgba(255,255,255,0.7)",
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: loading ? "not-allowed" : "pointer",
+                transition: "background 120ms, color 120ms",
+              }}
+            >
+              {loading === "approve" ? "Running…" : "Allow"}
+            </button>
+            <button
+              onClick={() => respond(false)}
+              disabled={!!loading}
+              style={{
+                flex: 1,
+                padding: "6px 0",
+                borderRadius: 6,
+                border: "1px solid rgba(255,255,255,0.08)",
+                background: "transparent",
+                color: "rgba(255,255,255,0.3)",
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: loading ? "not-allowed" : "pointer",
+                transition: "background 120ms, color 120ms",
+              }}
+            >
+              {loading === "deny" ? "Denying…" : "Deny"}
+            </button>
+          </div>
+          <div style={{ marginTop: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Link
+              href="/settings"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: 11,
+                color: "rgba(255,255,255,0.45)",
+                textDecoration: "none",
+                transition: "color 120ms",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.85)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.45)")}
+            >
+              <span>Want full access? Enable Autonomous Mode in Settings</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+              </svg>
+            </Link>
+          </div>
         </div>
       )}
     </div>
@@ -875,15 +1125,23 @@ export default function ChatInterface({
   const zipInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
-  // Context Picker state (Project / Container / Monitor / GitHub)
-  type ContextCategory = "project" | "container" | "monitor" | "github";
+  // Context Picker state (Project / Container / Monitor / GitHub / Deploy / Execution)
+  type ContextCategory = "project" | "container" | "monitor" | "github" | "deploy" | "deep-deploy";
+  type DeployMode = "deploy" | "deep-deploy" | null;
+  type ExecutionMode = "plan" | "action" | null;
   interface SelectedContextItem {
     type: ContextCategory;
     id: string;
     name: string;
     detail?: string;
+    deployMode?: "deploy" | "deep-deploy";
   }
   const [selectedContext, setSelectedContext] = useState<SelectedContextItem | null>(null);
+  const [deployMode, setDeployMode] = useState<DeployMode>(null);
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>(null);
+  const [defaultExecutionMode, setDefaultExecutionMode] = useState<"plan" | "action">("plan");
+  const [proceededPlanKeys, setProceededPlanKeys] = useState<Set<string>>(new Set());
+  const [chipOrder, setChipOrder] = useState<("deploy" | "context" | "project" | "execution")[]>([]);
   const [allProjects, setAllProjects] = useState<any[]>([]);
   const [allContainers, setAllContainers] = useState<any[]>([]);
   const [githubRepos, setGithubRepos] = useState<any[]>([]);
@@ -1018,6 +1276,9 @@ export default function ChatInterface({
       .then((r) => r.json())
       .then((data) => {
         if (data.deploymentsPath) setDeploymentsDir(data.deploymentsPath);
+        if (data.executionMode === "plan" || data.executionMode === "action") {
+          setDefaultExecutionMode(data.executionMode);
+        }
       })
       .catch(() => { });
   }, []);
@@ -1033,7 +1294,10 @@ export default function ChatInterface({
   const checkAndAttachActiveStream = useCallback(async (sid: string) => {
     try {
       const res = await fetch(`/api/chat/status?sessionId=${sid}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        setIsLoading(false);
+        return;
+      }
       const data = await res.json();
       if (data?.run?.status === "running") {
         setIsLoading(true);
@@ -1060,6 +1324,7 @@ export default function ChatInterface({
         });
         if (!streamRes.ok || !streamRes.body) {
           setIsLoading(false);
+          setMessages((prev) => prev.map((m) => m.streaming ? { ...m, streaming: false } : m));
           return;
         }
 
@@ -1071,13 +1336,39 @@ export default function ChatInterface({
         const toolBlocks: ToolBlock[] = [];
         const parts: MessagePart[] = [];
         let activeToolBlock: ToolBlock | null = null;
+        let isDone = false;
 
-        const processLine = (line: string) => {
-          if (!line.trim()) return;
+        const processLine = (line: string): boolean => {
+          if (!line.trim()) return false;
 
+          // ── Finish marker (AI SDK / SSE): d:{"finishReason":"stop",...} or data: [DONE] ──
+          if (line.startsWith("d:") || line.includes('"finishReason"') || line.trim() === "data: [DONE]") {
+            return true;
+          }
+
+          // ── Vercel AI SDK error stream line: 3:"error message" ──
+          if (line.startsWith("3:")) {
+            try {
+              const parsed = JSON.parse(line.slice(2));
+              if (typeof parsed === "string") {
+                throw new Error(parsed);
+              }
+            } catch (parseErr) {
+              if (parseErr instanceof Error && !parseErr.message.includes("Unexpected token")) {
+                throw parseErr;
+              }
+              throw new Error(line.slice(2));
+            }
+          }
+
+          // ── Structured SSE event: data: {...} ──
           if (line.startsWith("data: ")) {
             try {
               const json = JSON.parse(line.slice(6));
+
+              if (json.type === "finish" || json.type === "done" || json.finishReason) {
+                return true;
+              }
 
               if (json.type === "thinking-delta" && typeof json.delta === "string") {
                 thinkingText += json.delta;
@@ -1095,7 +1386,13 @@ export default function ChatInterface({
                       : m
                   )
                 );
-                return;
+                return false;
+              }
+
+              if (json.type === "plan-created") {
+                window.dispatchEvent(new CustomEvent("ray:plan-updated", { detail: json }));
+                window.dispatchEvent(new Event("ray:open-terminal"));
+                return false;
               }
 
               if (json.type === "tool-start" || json.type === "tool-output" || json.type === "tool-end") {
@@ -1168,7 +1465,7 @@ export default function ChatInterface({
                 );
 
                 window.dispatchEvent(new CustomEvent("ray:tool-event", { detail: toolEvent }));
-                return;
+                return false;
               }
 
               if (json.type === "text-delta" && typeof json.delta === "string") {
@@ -1195,9 +1492,10 @@ export default function ChatInterface({
                 );
               }
             } catch {}
-            return;
+            return false;
           }
 
+          // ── Vercel AI SDK text delta: 0:"text" ──
           if (line.startsWith("0:")) {
             try {
               const parsed = JSON.parse(line.slice(2));
@@ -1226,19 +1524,25 @@ export default function ChatInterface({
               }
             } catch {}
           }
+          return false;
         };
 
-        while (true) {
+        while (!isDone) {
           const { done, value } = await reader.read();
           if (done) break;
           rawBuffer += decoder.decode(value, { stream: true });
           const lines = rawBuffer.split("\n");
           rawBuffer = lines.pop() ?? "";
           for (const line of lines) {
-            processLine(line);
+            if (processLine(line)) {
+              isDone = true;
+              break;
+            }
           }
         }
-        if (rawBuffer.trim()) processLine(rawBuffer);
+        if (!isDone && rawBuffer.trim()) {
+          processLine(rawBuffer);
+        }
 
         const finalFullContent = fullAssistantText.trim();
         setMessages((prev) =>
@@ -1246,7 +1550,7 @@ export default function ChatInterface({
             m.streaming
               ? {
                   ...m,
-                  content: finalFullContent,
+                  content: finalFullContent || m.content,
                   thinking: thinkingText || m.thinking,
                   parts: [...parts],
                   toolBlocks: [...toolBlocks],
@@ -1258,9 +1562,13 @@ export default function ChatInterface({
 
         setIsLoading(false);
         window.dispatchEvent(new CustomEvent("ray:chat-status-change"));
+      } else {
+        setIsLoading(false);
+        setMessages((prev) => prev.map((m) => m.streaming ? { ...m, streaming: false } : m));
       }
     } catch {
       setIsLoading(false);
+      setMessages((prev) => prev.map((m) => m.streaming ? { ...m, streaming: false } : m));
     }
   }, []);
 
@@ -1361,6 +1669,7 @@ export default function ChatInterface({
           thinking,
           toolBlocks,
           parts: m.parts || (m.role === "assistant" ? parseMessageContentToParts(content) : undefined),
+          streaming: false,
         };
       });
       setMessages(mapped);
@@ -1379,6 +1688,7 @@ export default function ChatInterface({
             const mapped = data.session.messages.map((m: any) => {
               let content = m.content;
               let attachedContext = undefined;
+              let msgDeployMode: DeployMode | undefined = undefined;
               let thinking: string | undefined = undefined;
               let toolBlocks: ToolBlock[] | undefined = undefined;
 
@@ -1386,6 +1696,13 @@ export default function ChatInterface({
               if (match) {
                 try {
                   attachedContext = JSON.parse(match[1]);
+                  if (attachedContext) {
+                    if (attachedContext.deployMode) {
+                      msgDeployMode = attachedContext.deployMode;
+                    } else if (attachedContext.type === "deploy" || attachedContext.type === "deep-deploy") {
+                      msgDeployMode = attachedContext.type;
+                    }
+                  }
                   content = content.replace(/^<!-- attachedContext:(.*?) -->\n?/, "");
                 } catch { /* ignore */ }
               }
@@ -1421,6 +1738,7 @@ export default function ChatInterface({
                 toolBlocks,
                 parts,
                 attachedContext,
+                deployMode: msgDeployMode,
                 timestamp: new Date(m.createdAt),
                 streaming: false,
               };
@@ -1519,8 +1837,8 @@ export default function ChatInterface({
           </svg>
         ),
         onSelect: () => {
-          setInput("Deploy and run this project in Docker immediately.");
-          setSlashQuery(null);
+          setDeployMode("deploy");
+          setChipOrder((prev) => (prev.includes("deploy") ? prev : [...prev, "deploy"]));
         },
       },
       {
@@ -1533,8 +1851,40 @@ export default function ChatInterface({
           </svg>
         ),
         onSelect: () => {
-          setInput("Run a deep deploy: inspect monorepo workspaces, database migrations, dependencies, and thoroughly test the build before deploying to Docker.");
-          setSlashQuery(null);
+          setDeployMode("deep-deploy");
+          setChipOrder((prev) => (prev.includes("deploy") ? prev : [...prev, "deploy"]));
+        },
+      },
+      {
+        id: "cmd-plan",
+        name: "plan",
+        description: "Plan mode: formulate a step-by-step checklist plan before executing any actions",
+        icon: (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sky-400">
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+            <path d="m9 14 2 2 4-4" />
+          </svg>
+        ),
+        onSelect: () => {
+          setExecutionMode("plan");
+          setChipOrder((prev) => (prev.includes("execution") ? prev : [...prev, "execution"]));
+          setInput((prev) => prev.replace(/^\/plan\b/i, "").trim());
+        },
+      },
+      {
+        id: "cmd-action",
+        name: "action",
+        description: "Action mode: execute tasks directly without preliminary checklist approval phase",
+        icon: (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-400">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
+        ),
+        onSelect: () => {
+          setExecutionMode("action");
+          setChipOrder((prev) => (prev.includes("execution") ? prev : [...prev, "execution"]));
+          setInput((prev) => prev.replace(/^\/action\b/i, "").trim());
         },
       },
       {
@@ -1575,6 +1925,7 @@ export default function ChatInterface({
               name: allProjects[0].name,
               detail: allProjects[0].container?.port ? `Port :${allProjects[0].container.port}` : allProjects[0].projectPath,
             });
+            setChipOrder((prev) => (prev.includes("context") ? prev : [...prev, "context"]));
           }
         },
       },
@@ -1595,6 +1946,7 @@ export default function ChatInterface({
               name: allContainers[0].name,
               detail: allContainers[0].port ? `Port :${allContainers[0].port}` : allContainers[0].status,
             });
+            setChipOrder((prev) => (prev.includes("context") ? prev : [...prev, "context"]));
           }
         },
       },
@@ -1615,6 +1967,7 @@ export default function ChatInterface({
               name: monitorProjects[0].name,
               detail: `${monitorProjects[0].status} · ${monitorProjects[0].logPaths?.length || 0} logs`,
             });
+            setChipOrder((prev) => (prev.includes("context") ? prev : [...prev, "context"]));
           }
         },
       },
@@ -1628,7 +1981,14 @@ export default function ChatInterface({
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
           </svg>
         ),
-        onSelect: () => { setMessages([]); setInput(""); },
+        onSelect: () => {
+          setMessages([]);
+          setInput("");
+          setDeployMode(null);
+          setSelectedContext(null);
+          setAttachedProject(null);
+          setChipOrder([]);
+        },
       },
     ];
 
@@ -1650,6 +2010,7 @@ export default function ChatInterface({
           name: r.fullName,
           detail: `${r.defaultBranch || "main"} · ${r.cloneUrl || r.htmlUrl}`,
         });
+        setChipOrder((prev) => (prev.includes("context") ? prev : [...prev, "context"]));
       },
     }));
 
@@ -1671,6 +2032,7 @@ export default function ChatInterface({
           name: p.name,
           detail: p.container?.port ? `Port :${p.container.port}` : p.projectPath,
         });
+        setChipOrder((prev) => (prev.includes("context") ? prev : [...prev, "context"]));
       },
     }));
 
@@ -1692,6 +2054,7 @@ export default function ChatInterface({
           name: c.name,
           detail: c.port ? `Port :${c.port}` : c.status,
         });
+        setChipOrder((prev) => (prev.includes("context") ? prev : [...prev, "context"]));
       },
     }));
 
@@ -1713,6 +2076,7 @@ export default function ChatInterface({
           name: m.name,
           detail: `${m.status} · ${m.logPaths?.length || 0} logs`,
         });
+        setChipOrder((prev) => (prev.includes("context") ? prev : [...prev, "context"]));
       },
     }));
 
@@ -1829,6 +2193,7 @@ export default function ChatInterface({
       totalSize: file.size,
       zipFile: file,
     });
+    setChipOrder((prev) => (prev.includes("project") ? prev : [...prev, "project"]));
     if (zipInputRef.current) zipInputRef.current.value = "";
     inputRef.current?.focus();
   };
@@ -1847,6 +2212,7 @@ export default function ChatInterface({
       totalSize,
       files: fileList,
     });
+    setChipOrder((prev) => (prev.includes("project") ? prev : [...prev, "project"]));
     if (folderInputRef.current) folderInputRef.current.value = "";
     inputRef.current?.focus();
   };
@@ -1897,6 +2263,7 @@ export default function ChatInterface({
             totalSize: file.size,
             zipFile: file,
           });
+          setChipOrder((prev) => (prev.includes("project") ? prev : [...prev, "project"]));
           inputRef.current?.focus();
           return;
         }
@@ -1913,6 +2280,7 @@ export default function ChatInterface({
           totalSize,
           files: parsed.files,
         });
+        setChipOrder((prev) => (prev.includes("project") ? prev : [...prev, "project"]));
         inputRef.current?.focus();
       }
     } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
@@ -1935,6 +2303,7 @@ export default function ChatInterface({
           files: fileList,
         });
       }
+      setChipOrder((prev) => (prev.includes("project") ? prev : [...prev, "project"]));
       inputRef.current?.focus();
     }
   };
@@ -1993,9 +2362,24 @@ export default function ChatInterface({
     }
   };
 
-  const sendText = useCallback(async (text: string, contextOverride?: SelectedContextItem | null) => {
+  const sendText = useCallback(async (
+    text: string,
+    contextOverride?: SelectedContextItem | null,
+    deployModeOverride?: DeployMode,
+    executionModeOverride?: ExecutionMode
+  ) => {
+    let cleanText = text;
+    let activeExecutionMode = executionModeOverride !== undefined ? executionModeOverride : executionMode;
+    if (cleanText.startsWith("/plan ") || cleanText === "/plan") {
+      activeExecutionMode = "plan";
+      cleanText = cleanText.replace(/^\/plan\s*/, "").trim();
+    } else if (cleanText.startsWith("/action ") || cleanText === "/action") {
+      activeExecutionMode = "action";
+      cleanText = cleanText.replace(/^\/action\s*/, "").trim();
+    }
     const activeAttached = contextOverride !== undefined ? contextOverride : selectedContext;
-    if ((!text && !activeAttached) || isLoading) return;
+    const activeDeployMode = deployModeOverride !== undefined ? deployModeOverride : deployMode;
+    if ((!cleanText && !activeAttached && !activeDeployMode) || isLoading) return;
 
     // Detect if user typed any project name (e.g. @Website or Website)
     const detectedProj = monitorProjects.find(
@@ -2084,7 +2468,90 @@ export default function ChatInterface({
     }
 
     const attachedContextItem = activeAttached ? { ...activeAttached } : null;
-    if (attachedContextItem) {
+    if (activeDeployMode === "deep-deploy") {
+      if (attachedContextItem?.type === "github") {
+        const repoFullName = attachedContextItem.name;
+        const detailParts = (attachedContextItem.detail || "").split("·");
+        const branch = detailParts[0]?.trim() || "main";
+        const cloneUrl = detailParts[1]?.trim() || `https://github.com/${repoFullName}.git`;
+        const cleanName = attachedContextItem.name.split("/").pop() || "app";
+        const targetPath = `${deploymentsDir.replace(/\/+$/, "")}/${cleanName}`;
+        enrichedText = `[ATTACHED GITHUB REPOSITORY - DEEP DEPLOY]
+Repository: ${repoFullName}
+Branch: ${branch}
+Clone URL: ${cloneUrl}
+
+User Instruction: ${text || `Run a deep deploy on repository ${repoFullName}: thoroughly inspect monorepo workspaces, database migrations, dependencies, and test the build before deploying to Docker.`}
+
+Deep Deployment Instructions:
+1. Clone this repository directly via <exec>git clone ${cloneUrl} ${targetPath}</exec> (authentication is automatically handled).
+2. Inspect the project files with <read_file> or <list_dir>. Thoroughly check for monorepo workspaces, package.json scripts, database migrations, and environment variables.
+3. Test the build, run lint/tests if available, and verify or generate a production Dockerfile.
+4. Package and deploy it using <deploy name="${cleanName}" path="${targetPath}">.`;
+      } else if (attachedContextItem?.type === "project") {
+        enrichedText = `[ATTACHED WORKSPACE PROJECT - DEEP DEPLOY]
+Name: ${attachedContextItem.name}
+Details: ${attachedContextItem.detail || ""}
+
+User Instruction: ${text || `Run a deep deploy on project ${attachedContextItem.name}: inspect monorepo workspaces, database migrations, dependencies, and thoroughly test the build before deploying to Docker.`}
+
+Deep Deployment Instructions:
+1. Inspect the codebase, monorepo workspaces, package scripts, and database migrations.
+2. Test the build, run tests/checks, and verify the container configuration.
+3. Package and deploy it using <deploy name="${attachedContextItem.name}">.`;
+      } else if (attachedContextItem?.type === "container") {
+        enrichedText = `[TARGET CONTAINER - DEEP DEPLOY: ${attachedContextItem.name}]
+Container Name: ${attachedContextItem.name}
+Details: ${attachedContextItem.detail || ""}
+
+User Request: "${text || `Run a deep inspection and redeploy container ${attachedContextItem.name}.`}"
+
+CRITICAL INSTRUCTIONS FOR AI:
+1. Thoroughly inspect container "${attachedContextItem.name}" health, logs, and configuration.
+2. Run deep diagnostics on dependencies, environment, and runtime.
+3. Rebuild and redeploy with verified Docker parameters.`;
+      } else {
+        enrichedText = `Run a deep deploy: inspect monorepo workspaces, database migrations, dependencies, and thoroughly test the build before deploying to Docker.${text ? `\n\nUser Instruction: ${text}` : ""}`;
+      }
+    } else if (activeDeployMode === "deploy") {
+      if (attachedContextItem?.type === "github") {
+        const repoFullName = attachedContextItem.name;
+        const detailParts = (attachedContextItem.detail || "").split("·");
+        const branch = detailParts[0]?.trim() || "main";
+        const cloneUrl = detailParts[1]?.trim() || `https://github.com/${repoFullName}.git`;
+        const cleanName = attachedContextItem.name.split("/").pop() || "app";
+        const targetPath = `${deploymentsDir.replace(/\/+$/, "")}/${cleanName}`;
+        enrichedText = `[ATTACHED GITHUB REPOSITORY]
+Repository: ${repoFullName}
+Branch: ${branch}
+Clone URL: ${cloneUrl}
+
+User Instruction: ${text || `Deploy and run repository ${repoFullName} in Docker immediately.`}
+
+Deployment Instructions:
+1. Clone this repository directly via <exec>git clone ${cloneUrl} ${targetPath}</exec> (authentication is automatically handled).
+2. Inspect the project files with <read_file> or <list_dir>.
+3. Package and deploy it using <deploy name="${cleanName}" path="${targetPath}">.`;
+      } else if (attachedContextItem?.type === "project") {
+        enrichedText = `[ATTACHED WORKSPACE PROJECT]
+Name: ${attachedContextItem.name}
+Details: ${attachedContextItem.detail || ""}
+
+User Instruction: ${text || `Deploy and run project ${attachedContextItem.name} in Docker immediately.`}
+
+Deployment Instructions:
+1. Inspect the project files with <read_file> or <list_dir>.
+2. Package and deploy it using <deploy name="${attachedContextItem.name}">.`;
+      } else if (attachedContextItem?.type === "container") {
+        enrichedText = `[TARGET CONTAINER: ${attachedContextItem.name}]
+Container Name: ${attachedContextItem.name}
+Details: ${attachedContextItem.detail || ""}
+
+User Request: "${text || `Deploy and run container ${attachedContextItem.name} immediately.`}"`;
+      } else {
+        enrichedText = `Deploy and run this project in Docker immediately.${text ? `\n\nUser Instruction: ${text}` : ""}`;
+      }
+    } else if (attachedContextItem) {
       if (attachedContextItem.type === "github") {
         const repoFullName = attachedContextItem.name;
         const detailParts = (attachedContextItem.detail || "").split("·");
@@ -2133,14 +2600,35 @@ CRITICAL INSTRUCTIONS FOR AI:
       }
     }
 
+    const effectiveContext = attachedContextItem
+      ? { ...attachedContextItem, deployMode: activeDeployMode || undefined }
+      : activeDeployMode
+        ? {
+            type: activeDeployMode as ContextCategory,
+            id: `cmd-${activeDeployMode}`,
+            name: activeDeployMode === "deep-deploy" ? "deep deploy" : "deploy",
+            deployMode: activeDeployMode,
+          }
+        : null;
+
     const userMsg: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: text || (attachedContextItem ? `Deploy / Inspect ${attachedContextItem.name}` : ""),
-      attachedContext: attachedContextItem || undefined,
+      content: cleanText || (
+        activeDeployMode === "deep-deploy"
+          ? (attachedContextItem ? `Deep Deploy ${attachedContextItem.name}` : "Run deep deploy")
+          : activeDeployMode === "deploy"
+            ? (attachedContextItem ? `Deploy ${attachedContextItem.name}` : "Deploy immediately")
+            : (attachedContextItem ? `Deploy / Inspect ${attachedContextItem.name}` : "")
+      ),
+      attachedContext: effectiveContext || undefined,
+      deployMode: activeDeployMode || undefined,
       timestamp: new Date(),
     };
     setSelectedContext(null);
+    setDeployMode(null);
+    setExecutionMode(null);
+    setChipOrder([]);
     const assistantMsg: Message = {
       id: (Date.now() + 1).toString(),
       role: "assistant",
@@ -2155,7 +2643,7 @@ CRITICAL INSTRUCTIONS FOR AI:
     setIsLoading(true);
     abortRef.current = new AbortController();
 
-    const sid = await ensureSession(text);
+    const sid = await ensureSession(cleanText);
 
     try {
       const res = await fetch("/api/chat", {
@@ -2171,8 +2659,9 @@ CRITICAL INSTRUCTIONS FOR AI:
             { role: "user", content: enrichedText },
           ],
           modelId,
-          userMessageToSave: text || (attachedContextItem ? `Deploy / Inspect ${attachedContextItem.name}` : ""),
-          attachedContextItem,
+          userMessageToSave: userMsg.content,
+          attachedContextItem: effectiveContext,
+          executionMode: activeExecutionMode || defaultExecutionMode || undefined,
         }),
         signal: abortRef.current.signal,
       });
@@ -2193,14 +2682,30 @@ CRITICAL INSTRUCTIONS FOR AI:
       const toolBlocks: ToolBlock[] = [];
       const parts: MessagePart[] = [];
       let activeToolBlock: ToolBlock | null = null;
+      let isDone = false;
 
-      const processLine = (line: string) => {
-        if (!line.trim()) return;
+      const processLine = (line: string): boolean => {
+        if (!line.trim()) return false;
 
-        // ── Structured SSE event:  data: {...} ──
+        // ── Finish marker (AI SDK / SSE): d:{"finishReason":"stop",...} or data: [DONE] ──
+        if (line.startsWith("d:") || line.includes('"finishReason"') || line.trim() === "data: [DONE]") {
+          return true;
+        }
+
+        // ── Structured SSE event: data: {...} ──
         if (line.startsWith("data: ")) {
           try {
             const json = JSON.parse(line.slice(6));
+
+            if (json.type === "finish" || json.type === "done" || json.finishReason) {
+              return true;
+            }
+
+            if (json.type === "plan-created") {
+              window.dispatchEvent(new CustomEvent("ray:plan-updated", { detail: json }));
+              window.dispatchEvent(new Event("ray:open-terminal"));
+              return false;
+            }
 
             // Thinking delta
             if (json.type === "thinking-delta" && typeof json.delta === "string") {
@@ -2219,7 +2724,7 @@ CRITICAL INSTRUCTIONS FOR AI:
                     : m
                 )
               );
-              return;
+              return false;
             }
 
             if (json.type === "tool-start" || json.type === "tool-output" || json.type === "tool-end") {
@@ -2324,7 +2829,7 @@ CRITICAL INSTRUCTIONS FOR AI:
 
               // Always dispatch the tool event for the right sidebar terminal
               window.dispatchEvent(new CustomEvent("ray:tool-event", { detail: toolEvent }));
-              return;
+              return false;
             }
 
             // approval-request — inject an approval card into the chat
@@ -2350,7 +2855,7 @@ CRITICAL INSTRUCTIONS FOR AI:
                   },
                 ];
               });
-              return;
+              return false;
             }
 
             // json-encoded text-delta inside data: wrapper
@@ -2378,10 +2883,10 @@ CRITICAL INSTRUCTIONS FOR AI:
               );
             }
           } catch { /* partial/malformed */ }
-          return;
+          return false;
         }
 
-        // ── Vercel AI SDK text delta:  0:"text" ──
+        // ── Vercel AI SDK text delta: 0:"text" ──
         if (line.startsWith("0:")) {
           try {
             const parsed = JSON.parse(line.slice(2));
@@ -2409,6 +2914,7 @@ CRITICAL INSTRUCTIONS FOR AI:
               );
             }
           } catch { /* partial */ }
+          return false;
         }
 
         // ── Vercel AI SDK error stream line: 3:"error message" ──
@@ -2425,9 +2931,10 @@ CRITICAL INSTRUCTIONS FOR AI:
             throw new Error(line.slice(2));
           }
         }
+        return false;
       };
 
-      while (true) {
+      while (!isDone) {
         const { done, value } = await reader.read();
         if (done) break;
         rawBuffer += decoder.decode(value, { stream: true });
@@ -2435,11 +2942,16 @@ CRITICAL INSTRUCTIONS FOR AI:
         const lines = rawBuffer.split("\n");
         rawBuffer = lines.pop() ?? ""; // last element may be incomplete
         for (const line of lines) {
-          processLine(line);
+          if (processLine(line)) {
+            isDone = true;
+            break;
+          }
         }
       }
       // Process any remaining buffered content
-      if (rawBuffer.trim()) processLine(rawBuffer);
+      if (!isDone && rawBuffer.trim()) {
+        processLine(rawBuffer);
+      }
 
       const finalFullContent = fullAssistantText.trim();
 
@@ -2549,10 +3061,24 @@ CRITICAL INSTRUCTIONS FOR AI:
       setTimeout(() => inputRef.current?.focus(), 80);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, modelId, isLoading, ensureSession, saveMessages, mentionedProjects, monitorProjects, selectedContext]);
+  }, [messages, modelId, isLoading, ensureSession, saveMessages, mentionedProjects, monitorProjects, selectedContext, deployMode, executionMode, defaultExecutionMode, deploymentsDir]);
 
   // Keep the ref current so the stable terminal listener can call the latest sendText
   sendTextRef.current = sendText;
+
+  // Listen for plan proceed events (dispatched from TerminalPanel or elsewhere)
+  useEffect(() => {
+    const handleProceed = (e: Event) => {
+      const detail = (e as CustomEvent<{ title?: string }>).detail;
+      const planTitle = detail?.title ? ` for "${detail.title}"` : "";
+      if (detail?.title) {
+        setProceededPlanKeys((prev) => new Set(prev).add(detail.title!));
+      }
+      sendText(`Proceed with plan${planTitle}`, null, undefined, "action");
+    };
+    window.addEventListener("ray:proceed-plan", handleProceed);
+    return () => window.removeEventListener("ray:proceed-plan", handleProceed);
+  }, [sendText]);
 
   const handleRetry = useCallback(() => {
     if (isLoading) return;
@@ -2570,12 +3096,18 @@ CRITICAL INSTRUCTIONS FOR AI:
   }, [isLoading, sendText]);
 
   const sendMessage = async () => {
-    if ((!input.trim() && !attachedProject && !selectedContext) || isLoading || isUploading) return;
+    if ((!input.trim() && !attachedProject && !selectedContext && !deployMode && !executionMode) || isLoading || isUploading) return;
 
     let textToSend = input.trim();
     const currentAttached = attachedProject;
     const currentCtx = selectedContext ? { ...selectedContext } : null;
+    const currentDeployMode = deployMode;
+    const currentExecutionMode = executionMode;
+
     setSelectedContext(null);
+    setDeployMode(null);
+    setExecutionMode(null);
+    setChipOrder([]);
 
     if (currentAttached) {
       setIsUploading(true);
@@ -2617,7 +3149,11 @@ CRITICAL INSTRUCTIONS FOR AI:
         );
 
         if (!textToSend) {
-          textToSend = `I uploaded the project "${data.name}" located at "${data.projectPath}". Please inspect the codebase, package it into a Docker container, deploy it, and add it to 24/7 monitoring.`;
+          if (currentDeployMode === "deep-deploy") {
+            textToSend = `I uploaded the project "${data.name}" located at "${data.projectPath}". Please run a deep deploy: inspect monorepo workspaces, database migrations, dependencies, and test the build before packaging and deploying to Docker.`;
+          } else {
+            textToSend = `I uploaded the project "${data.name}" located at "${data.projectPath}". Please inspect the codebase, package it into a Docker container, deploy it, and add it to 24/7 monitoring.`;
+          }
         } else {
           textToSend = `${textToSend}\n\n[Attached project "${data.name}" uploaded to ${data.projectPath}]`;
         }
@@ -2632,7 +3168,7 @@ CRITICAL INSTRUCTIONS FOR AI:
       }
     }
 
-    sendText(textToSend, currentCtx);
+    sendText(textToSend, currentCtx, currentDeployMode, currentExecutionMode);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -2682,6 +3218,26 @@ CRITICAL INSTRUCTIONS FOR AI:
         setMentionQuery(null);
         setMentionStart(-1);
         return;
+      }
+    }
+
+    // Backspace on empty input removes the most recent attached chip
+    if (e.key === "Backspace" && input === "") {
+      if (chipOrder.length > 0) {
+        const last = chipOrder[chipOrder.length - 1];
+        if (last === "deploy") {
+          setDeployMode(null);
+          setChipOrder((prev) => prev.slice(0, -1));
+        } else if (last === "context") {
+          setSelectedContext(null);
+          setChipOrder((prev) => prev.slice(0, -1));
+        } else if (last === "project") {
+          setAttachedProject(null);
+          setChipOrder((prev) => prev.slice(0, -1));
+        } else if (last === "execution") {
+          setExecutionMode(null);
+          setChipOrder((prev) => prev.slice(0, -1));
+        }
       }
     }
 
@@ -2888,7 +3444,7 @@ CRITICAL INSTRUCTIONS FOR AI:
           </div>
         ) : (
           <div className="max-w-3xl mx-auto flex flex-col gap-6">
-            {messages.map((msg) => (
+            {messages.map((msg, idx) => (
               <div
                 key={msg.id}
                 className={`flex gap-3 animate-fade-in ${msg.role === "user" ? "justify-end" : "justify-start"}`}
@@ -2995,7 +3551,7 @@ CRITICAL INSTRUCTIONS FOR AI:
                         <div className="flex flex-col gap-2 w-full">
                           {/* Top Unified Process Accordion with Thinking + Terminal commands, followed by clean Markdown response */}
                           {(() => {
-                            const { cleanText, extractedThinking, parsedBlocks } = extractCleanAssistantContent(msg.content);
+                            const { cleanText, extractedThinking, parsedBlocks, extractedPlan } = extractCleanAssistantContent(msg.content);
                             const allBlocks = msg.toolBlocks && msg.toolBlocks.length > 0 ? msg.toolBlocks : parsedBlocks;
                             const combinedThinking = msg.thinking || extractedThinking;
 
@@ -3006,6 +3562,27 @@ CRITICAL INSTRUCTIONS FOR AI:
                                     blocks={allBlocks}
                                     thinking={combinedThinking}
                                     isStreaming={msg.streaming}
+                                  />
+                                )}
+
+                                {extractedPlan && (
+                                  <PlanCard
+                                    plan={extractedPlan}
+                                    isStreaming={msg.streaming}
+                                    hasProceeded={
+                                      idx < messages.length - 1 ||
+                                      (msg.id ? proceededPlanKeys.has(msg.id) : false) ||
+                                      proceededPlanKeys.has(extractedPlan.title)
+                                    }
+                                    onProceed={() => {
+                                      setProceededPlanKeys((prev) => {
+                                        const next = new Set(prev);
+                                        if (msg.id) next.add(msg.id);
+                                        if (extractedPlan.title) next.add(extractedPlan.title);
+                                        return next;
+                                      });
+                                      sendText(`Proceed with plan for "${extractedPlan.title}"`, null, undefined, "action");
+                                    }}
                                   />
                                 )}
 
@@ -3128,33 +3705,83 @@ CRITICAL INSTRUCTIONS FOR AI:
                         </div>
                       ) : (
                         <div>
-                          {msg.attachedContext && (
-                            <div className="mb-2.5 px-3 py-1.5 rounded-lg bg-black/50 border border-white/20 flex items-center justify-between gap-3 text-xs font-mono shadow-sm">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 bg-white/10">
-                                  {msg.attachedContext.type === "github" ? (
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="text-white">
-                                      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-                                    </svg>
-                                  ) : msg.attachedContext.type === "container" ? (
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-sky-400">
-                                      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                                    </svg>
-                                  ) : msg.attachedContext.type === "monitor" ? (
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-400">
-                                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                                    </svg>
-                                  ) : (
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/70">
-                                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                                    </svg>
-                                  )}
+                          {(msg.attachedContext || msg.deployMode) && (
+                            <div className="flex flex-col gap-1.5 mb-2.5">
+                              {/* Deploy / Deep Deploy chip */}
+                              {(msg.deployMode || msg.attachedContext?.deployMode || msg.attachedContext?.type === "deploy" || msg.attachedContext?.type === "deep-deploy") && (() => {
+                                const mode = msg.deployMode || msg.attachedContext?.deployMode || (msg.attachedContext?.type === "deep-deploy" ? "deep-deploy" : "deploy");
+                                const isDeep = mode === "deep-deploy";
+                                return (
+                                  <div
+                                    className="px-3 py-1.5 rounded-lg flex items-center justify-between gap-3 text-xs font-mono shadow-sm"
+                                    style={{
+                                      background: "rgba(12,12,12,0.85)",
+                                      border: isDeep ? "1px solid rgba(168,85,247,0.3)" : "1px solid rgba(16,185,129,0.3)",
+                                    }}
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <div
+                                        className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0"
+                                        style={{ background: isDeep ? "rgba(168,85,247,0.15)" : "rgba(16,185,129,0.15)" }}
+                                      >
+                                        {isDeep ? (
+                                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-400">
+                                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                                          </svg>
+                                        ) : (
+                                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400">
+                                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                                            <polyline points="22 4 12 14.01 9 11.01" />
+                                          </svg>
+                                        )}
+                                      </div>
+                                      <span className="font-semibold text-white truncate max-w-[220px]">
+                                        {isDeep ? "deep deploy" : "deploy"}
+                                      </span>
+                                    </div>
+                                    <span
+                                      className={`text-[10px] uppercase tracking-wider font-mono flex-shrink-0 px-1.5 py-0.5 rounded ${
+                                        isDeep
+                                          ? "text-purple-300 bg-purple-500/10 border border-purple-500/20"
+                                          : "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20"
+                                      }`}
+                                    >
+                                      {isDeep ? "Deep Verification" : "Immediate Deploy"}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* Target context chip (GitHub, Project, Container, Monitor) */}
+                              {msg.attachedContext && msg.attachedContext.type !== "deploy" && msg.attachedContext.type !== "deep-deploy" && (
+                                <div className="px-3 py-1.5 rounded-lg bg-black/50 border border-white/20 flex items-center justify-between gap-3 text-xs font-mono shadow-sm">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 bg-white/10">
+                                      {msg.attachedContext.type === "github" ? (
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="text-white">
+                                          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+                                        </svg>
+                                      ) : msg.attachedContext.type === "container" ? (
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-sky-400">
+                                          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                                        </svg>
+                                      ) : msg.attachedContext.type === "monitor" ? (
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-400">
+                                          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                                        </svg>
+                                      ) : (
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/70">
+                                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                                        </svg>
+                                      )}
+                                    </div>
+                                    <span className="font-semibold text-white truncate max-w-[200px]">{msg.attachedContext.name}</span>
+                                  </div>
+                                  <span className="text-[10px] text-white/50 uppercase tracking-wider font-mono flex-shrink-0">
+                                    {msg.attachedContext.type}
+                                  </span>
                                 </div>
-                                <span className="font-semibold text-white truncate max-w-[200px]">{msg.attachedContext.name}</span>
-                              </div>
-                              <span className="text-[10px] text-white/50 uppercase tracking-wider font-mono flex-shrink-0">
-                                {msg.attachedContext.type}
-                              </span>
+                              )}
                             </div>
                           )}
                           <p style={{ fontSize: "0.9375rem", lineHeight: "1.6", whiteSpace: "pre-wrap" }}>{msg.content}</p>
@@ -3308,90 +3935,229 @@ CRITICAL INSTRUCTIONS FOR AI:
               )}
             </div>
           )}
-          {/* Attached Project Badge */}
-          {attachedProject && (
-            <div className="mx-3 mt-3 p-2.5 rounded-xl border border-white/[0.12] bg-[#0e0e0e] flex items-center justify-between gap-3 animate-in fade-in duration-150">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0 text-white">
-                  {attachedProject.type === "zip" ? (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                      <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-                      <line x1="12" y1="22.08" x2="12" y2="12" />
-                    </svg>
-                  ) : (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
-                    </svg>
-                  )}
-                </div>
+          {/* Linked context & action chips (Deploy, Deep Deploy, GitHub, Project, Container, Monitor, Upload) */}
+          {(() => {
+            // Compute active keys in their chronological addition order
+            const activeKeys: ("project" | "context" | "deploy" | "execution")[] = [];
+            for (const key of chipOrder) {
+              if (key === "project" && attachedProject && !activeKeys.includes("project")) activeKeys.push("project");
+              if (key === "context" && selectedContext && !activeKeys.includes("context")) activeKeys.push("context");
+              if (key === "deploy" && deployMode && !activeKeys.includes("deploy")) activeKeys.push("deploy");
+              if (key === "execution" && executionMode && !activeKeys.includes("execution")) activeKeys.push("execution");
+            }
+            // Fallback for any active item not yet captured in chipOrder
+            if (attachedProject && !activeKeys.includes("project")) activeKeys.push("project");
+            if (selectedContext && !activeKeys.includes("context")) activeKeys.push("context");
+            if (deployMode && !activeKeys.includes("deploy")) activeKeys.push("deploy");
+            if (executionMode && !activeKeys.includes("execution")) activeKeys.push("execution");
 
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-white truncate">{attachedProject.name}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/70 font-mono">
-                      {attachedProject.type === "zip" ? "ZIP Archive" : `${attachedProject.fileCount} files`}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-white/40 flex items-center gap-1.5 font-mono">
-                    <span>{formatFileSize(attachedProject.totalSize)}</span>
-                    <span>·</span>
-                    <span className="text-emerald-400">Ready to deploy with Docker</span>
-                  </div>
-                </div>
+            if (activeKeys.length === 0) return null;
+
+            return (
+              <div className="flex flex-col gap-2 mx-3 mt-3">
+                {activeKeys.map((key) => {
+                  if (key === "execution" && executionMode) {
+                    const isPlan = executionMode === "plan";
+                    return (
+                      <div
+                        key="chip-execution"
+                        className="px-3 py-1.5 rounded-xl flex items-center justify-between gap-2 animate-fade-in bg-[#0c0c0c] border border-white/[0.08]"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-5 h-5 rounded-md bg-white/[0.06] border border-white/10 flex items-center justify-center text-white flex-shrink-0">
+                            {isPlan ? (
+                              <Icon icon="lucide:clipboard-check" width={11} height={11} />
+                            ) : (
+                              <Icon icon="lucide:zap" width={11} height={11} />
+                            )}
+                          </div>
+                          <span className="text-xs font-semibold text-white truncate font-mono">
+                            {isPlan ? "plan mode" : "action mode"}
+                          </span>
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                              isPlan
+                                ? "text-white/60 bg-white/[0.04] border border-white/10"
+                                : "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20"
+                            }`}
+                          >
+                            {isPlan ? "Checklist & review before execution" : "Direct execution without approval"}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setExecutionMode(null);
+                            setChipOrder((prev) => prev.filter((k) => k !== "execution"));
+                          }}
+                          className="text-white/40 hover:text-white text-xs px-1 cursor-pointer transition-colors"
+                          title={isPlan ? "Remove plan mode override" : "Remove action mode override"}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  if (key === "deploy" && deployMode) {
+                    const isDeep = deployMode === "deep-deploy";
+                    return (
+                      <div
+                        key="chip-deploy"
+                        className="px-3 py-1.5 rounded-lg flex items-center justify-between gap-2 animate-fade-in"
+                        style={{
+                          background: "#0c0c0c",
+                          border: isDeep ? "1px solid rgba(168,85,247,0.25)" : "1px solid rgba(16,185,129,0.25)",
+                        }}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          {isDeep ? (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-400 flex-shrink-0">
+                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                            </svg>
+                          ) : (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400 flex-shrink-0">
+                              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                              <polyline points="22 4 12 14.01 9 11.01" />
+                            </svg>
+                          )}
+                          <span className="text-xs font-semibold text-white truncate font-mono">
+                            {isDeep ? "deep deploy" : "deploy"}
+                          </span>
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                              isDeep
+                                ? "text-purple-300 bg-purple-500/10 border border-purple-500/20"
+                                : "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20"
+                            }`}
+                          >
+                            {isDeep ? "Deep verification & test build" : "Fast immediate deploy"}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeployMode(null);
+                            setChipOrder((prev) => prev.filter((k) => k !== "deploy"));
+                          }}
+                          className="text-white/40 hover:text-white text-xs px-1 cursor-pointer transition-colors"
+                          title={isDeep ? "Remove deep deploy" : "Remove deploy"}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  if (key === "context" && selectedContext) {
+                    return (
+                      <div
+                        key="chip-context"
+                        className="px-3 py-1.5 rounded-lg flex items-center justify-between gap-2 animate-fade-in"
+                        style={{ background: "#0c0c0c", border: "1px solid rgba(255,255,255,0.08)" }}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          {selectedContext.type === "project" ? (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/60 flex-shrink-0">
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            </svg>
+                          ) : selectedContext.type === "container" ? (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sky-400 flex-shrink-0">
+                              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                            </svg>
+                          ) : selectedContext.type === "github" ? (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="text-white flex-shrink-0">
+                              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+                            </svg>
+                          ) : (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400 flex-shrink-0">
+                              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                            </svg>
+                          )}
+                          <span className="text-xs font-semibold text-white truncate font-mono">
+                            {selectedContext.name}
+                          </span>
+                          {/* Omit the verbose badge for GitHub */}
+                          {selectedContext.type !== "github" && (
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded capitalize"
+                              style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.45)" }}
+                            >
+                              {selectedContext.type} {selectedContext.detail ? `· ${selectedContext.detail}` : ""}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedContext(null);
+                            setChipOrder((prev) => prev.filter((k) => k !== "context"));
+                          }}
+                          className="text-white/40 hover:text-white text-xs px-1 cursor-pointer transition-colors"
+                          title="Clear linked context"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  if (key === "project" && attachedProject) {
+                    return (
+                      <div
+                        key="chip-project"
+                        className="p-2.5 rounded-xl border border-white/[0.12] bg-[#0e0e0e] flex items-center justify-between gap-3 animate-in fade-in duration-150"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0 text-white">
+                            {attachedProject.type === "zip" ? (
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                                <line x1="12" y1="22.08" x2="12" y2="12" />
+                              </svg>
+                            ) : (
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+                              </svg>
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-white truncate">{attachedProject.name}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/70 font-mono">
+                                {attachedProject.type === "zip" ? "ZIP Archive" : `${attachedProject.fileCount} files`}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-white/40 flex items-center gap-1.5 font-mono">
+                              <span>{formatFileSize(attachedProject.totalSize)}</span>
+                              <span>·</span>
+                              <span className="text-emerald-400">Ready to deploy with Docker</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAttachedProject(null);
+                            setChipOrder((prev) => prev.filter((k) => k !== "project"));
+                          }}
+                          className="w-6 h-6 rounded-lg flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                          title="Remove attachment"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })}
               </div>
-
-              <button
-                type="button"
-                onClick={() => setAttachedProject(null)}
-                className="w-6 h-6 rounded-lg flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-                title="Remove attachment"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-          {/* Selected Context Chip (Project, Container, Monitor, GitHub) */}
-          {selectedContext && (
-            <div className="mx-3 mt-3 px-3 py-1.5 rounded-lg flex items-center justify-between gap-2 animate-fade-in"
-              style={{ background: "#0c0c0c", border: "1px solid rgba(255,255,255,0.08)" }}>
-              <div className="flex items-center gap-2 min-w-0">
-                {selectedContext.type === "project" ? (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/60">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                  </svg>
-                ) : selectedContext.type === "container" ? (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sky-400">
-                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                  </svg>
-                ) : selectedContext.type === "github" ? (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="text-white">
-                    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-                  </svg>
-                ) : (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400">
-                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                  </svg>
-                )}
-                <span className="text-xs font-semibold text-white truncate font-mono">
-                  {selectedContext.name}
-                </span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded capitalize"
-                  style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.45)" }}>
-                  {selectedContext.type} {selectedContext.detail ? `· ${selectedContext.detail}` : ""}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedContext(null)}
-                className="text-white/40 hover:text-white text-xs px-1 cursor-pointer"
-                title="Clear linked context"
-              >
-                ✕
-              </button>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Text area */}
           <textarea
@@ -3401,10 +4167,16 @@ CRITICAL INSTRUCTIONS FOR AI:
             onKeyDown={handleKeyDown}
             placeholder={
               attachedProject
-                ? `Add instructions or press Enter to deploy ${attachedProject.name}…`
+                ? `Add instructions or press Enter to ${deployMode === "deep-deploy" ? "deep deploy" : "deploy"} ${attachedProject.name}…`
                 : selectedContext
-                  ? `Ask anything about ${selectedContext.name} (${selectedContext.type})…`
-                  : `Message ${modelName}… (type / for commands or @ for monitor)`
+                  ? `Add instructions or press Enter to ${deployMode === "deep-deploy" ? "deep deploy" : deployMode === "deploy" ? "deploy" : "ask about"} ${selectedContext.name}…`
+                  : deployMode
+                    ? `Add instructions or press Enter to ${deployMode === "deep-deploy" ? "deep deploy" : "deploy"}…`
+                    : executionMode === "plan"
+                      ? "Enter prompt for checklist plan… (review in Tool Window before execution)"
+                      : executionMode === "action"
+                        ? "Enter prompt for direct execution… (runs commands immediately)"
+                        : `Message ${modelName}… (type / for commands or @ for monitor)`
             }
             rows={1}
             className="w-full px-4 pt-3.5 pb-2 text-sm resize-none outline-none"
@@ -3457,9 +4229,9 @@ CRITICAL INSTRUCTIONS FOR AI:
                 title="Open slash commands and context menu"
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors border cursor-pointer"
                 style={{
-                  background: selectedContext ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.04)",
-                  color: selectedContext ? "#ffffff" : "rgba(255,255,255,0.45)",
-                  borderColor: selectedContext ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.06)",
+                  background: (selectedContext || deployMode || executionMode) ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.04)",
+                  color: (selectedContext || deployMode || executionMode) ? "#ffffff" : "rgba(255,255,255,0.45)",
+                  borderColor: (selectedContext || deployMode || executionMode) ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.06)",
                 }}
               >
                 {selectedContext?.type === "project" ? (
@@ -3470,13 +4242,79 @@ CRITICAL INSTRUCTIONS FOR AI:
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" /></svg>
                 ) : selectedContext?.type === "monitor" ? (
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
+                ) : deployMode === "deep-deploy" ? (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-400"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
+                ) : deployMode === "deploy" ? (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
+                ) : executionMode === "plan" ? (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sky-400"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" ry="1" /></svg>
+                ) : executionMode === "action" ? (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-400"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
                 ) : (
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
                 )}
                 <span className="font-mono text-[11px] truncate max-w-[120px]">
-                  {selectedContext ? selectedContext.name : "/ commands"}
+                  {selectedContext
+                    ? selectedContext.name
+                    : deployMode
+                      ? deployMode
+                      : executionMode
+                        ? executionMode
+                        : "/ commands"}
                 </span>
               </button>
+
+              {/* Dedicated deploy pill in bottom bar when both context and deployMode are active */}
+              {selectedContext && deployMode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeployMode(null);
+                    setChipOrder((prev) => prev.filter((k) => k !== "deploy"));
+                  }}
+                  title={deployMode === "deep-deploy" ? "Deep Deploy active (click to remove)" : "Deploy active (click to remove)"}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-mono transition-colors border cursor-pointer animate-fade-in"
+                  style={{
+                    background: deployMode === "deep-deploy" ? "rgba(168,85,247,0.12)" : "rgba(16,185,129,0.12)",
+                    color: deployMode === "deep-deploy" ? "rgb(216,180,254)" : "rgb(52,211,153)",
+                    borderColor: deployMode === "deep-deploy" ? "rgba(168,85,247,0.3)" : "rgba(16,185,129,0.3)",
+                  }}
+                >
+                  {deployMode === "deep-deploy" ? (
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-400">
+                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                    </svg>
+                  ) : (
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                      <polyline points="22 4 12 14.01 9 11.01" />
+                    </svg>
+                  )}
+                  <span>{deployMode === "deep-deploy" ? "deep deploy" : "deploy"}</span>
+                  <span className="text-white/40 hover:text-white ml-0.5">✕</span>
+                </button>
+              )}
+
+              {/* Dedicated execution pill in bottom bar when executionMode is active and either context or deployMode is set */}
+              {executionMode && (selectedContext || deployMode) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExecutionMode(null);
+                    setChipOrder((prev) => prev.filter((k) => k !== "execution"));
+                  }}
+                  title={executionMode === "plan" ? "Plan Mode active (click to remove)" : "Action Mode active (click to remove)"}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-mono transition-colors border cursor-pointer animate-fade-in bg-white/[0.06] border-white/15 text-white"
+                >
+                  {executionMode === "plan" ? (
+                    <Icon icon="lucide:clipboard-check" width={11} height={11} className="text-white/80" />
+                  ) : (
+                    <Icon icon="lucide:zap" width={11} height={11} className="text-emerald-400" />
+                  )}
+                  <span>{executionMode === "plan" ? "plan" : "action"}</span>
+                  <span className="text-white/40 hover:text-white ml-0.5">✕</span>
+                </button>
+              )}
 
               {/* Upload Project Button */}
               <div className="flex items-center gap-1">
@@ -3529,14 +4367,14 @@ CRITICAL INSTRUCTIONS FOR AI:
               ) : (
                 <button
                   onClick={sendMessage}
-                  disabled={!input.trim() && !attachedProject}
-                  className="w-8 h-8 flex items-center justify-center rounded-xl transition-all duration-150 cursor-pointer"
+                  disabled={!input.trim() && !attachedProject && !selectedContext && !deployMode}
+                  className="w-8 h-8 flex items-center justify-center rounded-xl transition-all duration-150 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                   style={{
-                    background: (input.trim() || attachedProject)
+                    background: (input.trim() || attachedProject || selectedContext || deployMode)
                       ? "#ffffff"
                       : "rgba(255,255,255,0.07)",
-                    color: (input.trim() || attachedProject) ? "#000" : "rgba(255,255,255,0.2)",
-                    boxShadow: (input.trim() || attachedProject)
+                    color: (input.trim() || attachedProject || selectedContext || deployMode) ? "#000" : "rgba(255,255,255,0.2)",
+                    boxShadow: (input.trim() || attachedProject || selectedContext || deployMode)
                       ? "0 0 16px rgba(255,255,255,0.15)"
                       : "none",
                     border: "none",

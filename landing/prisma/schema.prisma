@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,6 +8,10 @@ generator client {
 datasource db {
   provider = "mysql"
 }
+
+// =============================================
+// EXISTING TABLES (DO NOT ALTER)
+// =============================================
 
 model Post {
   id              String   @id @default(cuid())
@@ -37,6 +39,14 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Relations to ray-specific tables
+  chatSessions       RayChatSession[]
+  monitorProjects    RayMonitorProject[]
+  deployments        RayDeployment[]
+  githubIntegrations RayGithubIntegration[]
+  pipelines          RayPipeline[]
+  securityScans      RaySecurityScan[]
+
   @@map("users")
 }
 
@@ -60,4 +70,197 @@ model Waitlist {
   createdAt DateTime @default(now())
 
   @@map("waitlists")
+}
+
+// =============================================
+// OZAIAS & COHEN WAITLIST TABLES
+// =============================================
+
+model OziasWaitlist {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String?
+  location  String?
+  userAgent String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@map("ozias_waiting_list")
+}
+
+model CohenWaitlist {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String?
+  location  String?
+  userAgent String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@map("cohen_waiting_list")
+}
+
+// =============================================
+// RAY-SPECIFIC TABLES
+// =============================================
+
+model RayChatSession {
+  id        String           @id @default(cuid())
+  userId    String
+  title     String           @default("New Chat")
+  model     String           @default("MiniMax-M3")
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  RayChatMessage[]
+
+  @@map("ray_chat_sessions")
+}
+
+model RayChatMessage {
+  id        String         @id @default(cuid())
+  sessionId String
+  role      String         // "user" | "assistant"
+  content   String         @db.LongText
+  createdAt DateTime       @default(now())
+  session   RayChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("ray_chat_messages")
+}
+
+model RayMonitorProject {
+  id             String            @id @default(cuid())
+  userId         String
+  name           String
+  projectPath    String            @db.Text
+  logPaths       String            @db.Text
+  logCommand     String?           @db.Text
+  runCommand     String?           @db.Text
+  intervalSec    Int               @default(30)
+  enabled        Boolean           @default(true)
+  status         String            @default("discovering")
+  memory         String?           @db.LongText
+  memoryStatus   String?
+  projectUrl     String?           @db.Text
+  managedPid     Int?
+  managedLogFile String?           @db.Text
+  lastChecked    DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alerts         RayMonitorAlert[]
+
+  @@map("ray_monitor_projects")
+}
+
+model RayMonitorAlert {
+  id        String            @id @default(cuid())
+  projectId String
+  severity  String
+  message   String            @db.Text
+  rawLog    String            @db.LongText
+  dismissed Boolean           @default(false)
+  createdAt DateTime          @default(now())
+  project   RayMonitorProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("ray_monitor_alerts")
+}
+
+model RayDeployment {
+  id            String   @id @default(cuid())
+  userId        String
+  projectId     String?
+  name          String
+  sourceType    String
+  repoUrl       String?  @db.Text
+  branch        String?  @default("main")
+  commitHash    String?
+  commitMessage String?  @db.Text
+  projectPath   String   @db.Text
+  dockerfile    String?  @db.LongText
+  containerId   String?
+  containerName String?
+  imageName     String?
+  hostPort      Int?
+  containerPort Int?     @default(3000)
+  envVars       String?  @db.Text
+  status        String   @default("pending")
+  buildLogs     String?  @db.LongText
+  deployUrl     String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("ray_deployments")
+}
+
+model RayGithubIntegration {
+  id             String   @id @default(cuid())
+  userId         String
+  githubUsername String?
+  accessToken    String?  @db.Text
+  avatarUrl      String?  @db.Text
+  webhookSecret  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("ray_github_integrations")
+}
+
+model RayPipeline {
+  id             String           @id @default(cuid())
+  userId         String
+  projectId      String?
+  name           String
+  repoUrl        String           @db.Text
+  branch         String           @default("main")
+  autoDeploy     Boolean          @default(true)
+  dockerfilePath String?          @default("Dockerfile")
+  port           Int              @default(3000)
+  status         String           @default("idle")
+  lastRunAt      DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runs           RayPipelineRun[]
+
+  @@map("ray_pipelines")
+}
+
+model RayPipelineRun {
+  id            String      @id @default(cuid())
+  pipelineId    String
+  commitHash    String?
+  commitMessage String?     @db.Text
+  author        String?
+  status        String      @default("running")
+  stages        String?     @db.LongText
+  logs          String?     @db.LongText
+  durationMs    Int?
+  createdAt     DateTime    @default(now())
+  pipeline      RayPipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+
+  @@map("ray_pipeline_runs")
+}
+
+model RaySecurityScan {
+  id          String   @id @default(cuid())
+  userId      String
+  projectId   String?
+  projectName String
+  trigger     String
+  status      String
+  dangerCount Int      @default(0)
+  warnCount   Int      @default(0)
+  infoCount   Int      @default(0)
+  findings    String   @db.LongText
+  logs        String   @db.LongText
+  overrideBy  String?
+  overridden  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([projectId])
+  @@map("ray_security_scans")
 }

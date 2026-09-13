@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@iconify/react";
 import DeployDiagnosisModal from "@/components/DeployDiagnosisModal";
+import { getPrimaryProjectUrl } from "@/lib/domains";
 
 const SpinIcon = ({ size = 14 }: { size?: number }) => (
   <svg className="animate-spin" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -69,7 +70,7 @@ export default function DeploymentDetailPage({
     );
   }
 
-  const effectiveUrl = deployment?.deployUrl || (deployment?.hostPort ? `http://localhost:${deployment.hostPort}` : null);
+  const effectiveUrl = getPrimaryProjectUrl(deployment?.deployUrl, deployment?.hostPort) || (deployment?.hostPort ? `http://localhost:${deployment.hostPort}` : null);
   const isFailed = deployment?.status === "failed";
   const containerName = deployment?.containerName || `ray-${deployment?.name}`;
 

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@iconify/react";
+import { getPrimaryProjectUrl } from "@/lib/domains";
 
 interface ProjectItem {
   id: string;
@@ -184,7 +185,7 @@ export default function ProjectsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((proj) => {
-            const effectiveUrl = proj.projectUrl || (proj.container?.url) || (proj.container?.port ? `http://localhost:${proj.container.port}` : null);
+            const effectiveUrl = getPrimaryProjectUrl(proj.projectUrl, proj.container?.port) || (proj.container?.url) || (proj.container?.port ? `http://localhost:${proj.container.port}` : null);
             return (
               <div
                 key={proj.id}
@@ -287,7 +288,7 @@ export default function ProjectsPage() {
                     ) : proj.projectUrl ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-emerald-500/[0.08] border border-emerald-500/20 text-[11px] font-mono text-emerald-300 truncate max-w-[160px]">
                         <Icon icon="lucide:globe" width={11} height={11} className="text-emerald-400/80" />
-                        <span>{proj.projectUrl.replace(/^https?:\/\//, "")}</span>
+                        <span>{(getPrimaryProjectUrl(proj.projectUrl) || proj.projectUrl).replace(/^https?:\/\//, "")}</span>
                       </span>
                     ) : null}
 

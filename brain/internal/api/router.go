@@ -107,5 +107,9 @@ func NewRouter() http.Handler {
 		}
 	})
 
+	// Terminal routes (interactive host and container execution)
+	mux.HandleFunc("/v1/terminal/exec", terminalExecHandler)
+	mux.HandleFunc("/v1/terminal/stream", terminalStreamHandler)
+
 	return corsMiddleware(mux)
 }

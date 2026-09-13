@@ -3,6 +3,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { Play } from "lucide-react";
+import InlineWaitlist from "@/components/InlineWaitlist";
 
 export default function OziasHero() {
   return (
@@ -60,6 +61,16 @@ export default function OziasHero() {
         >
           The frontier AI reasoning engine engineered specifically for DevOps orchestration, real-time infrastructure self-healing, and Aegis cybersecurity guardrails.
         </motion.p>
+
+        {/* Waitlist Button & Inline Input */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+          className="mt-8 relative z-20"
+        >
+          <InlineWaitlist product="ozias" buttonText="Join Ozias Waitlist" />
+        </motion.div>
       </div>
 
       {/* Dedicated Video Gap / Placeholder Hero Frame (Spacious 16:9 container, clean and refined) */}

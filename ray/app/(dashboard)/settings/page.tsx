@@ -1,19 +1,62 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Icon } from "@iconify/react";
 
 const BRAIN_URL = process.env.NEXT_PUBLIC_BRAIN_URL || "http://localhost:3100";
 
 export default function SettingsPage() {
   const [activeView, setActiveView] = useState<"general" | "keys">("general");
-  const [saved, setSaved] = useState(false);
   const [autonomous, setAutonomous] = useState(false);
   const [autonomousLoading, setAutonomousLoading] = useState(true);
   const [autonomousSaving, setAutonomousSaving] = useState(false);
 
+  // User Profile state
+  const [userProfile, setUserProfile] = useState<{
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    createdAt?: string;
+  } | null>(null);
+  const [profileName, setProfileName] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
+  const [profileError, setProfileError] = useState("");
+
+  // Change Password state
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordSuccess, setPasswordSuccess] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+
   // Security Checks state
   const [securityChecksEnabled, setSecurityChecksEnabled] = useState(true);
   const [securityChecksSaving, setSecurityChecksSaving] = useState(false);
+
+  // Execution Mode (Plan vs Action)
+  const [executionMode, setExecutionMode] = useState<"plan" | "action">("plan");
+  const [executionModeSaving, setExecutionModeSaving] = useState(false);
+  const [executionModeSaved, setExecutionModeSaved] = useState(false);
+
+  // Routing Mode & Network state (Ports vs Domain)
+  const [routingMode, setRoutingMode] = useState<"port" | "domain">("port");
+  const [domainProvider, setDomainProvider] = useState<"sslip" | "custom">("sslip");
+  const [customRootDomain, setCustomRootDomain] = useState("");
+  const [serverNetwork, setServerNetwork] = useState<{
+    localIp: string;
+    publicIp: string;
+    isPrivateNetwork: boolean;
+    isPubliclyExposed: boolean;
+  } | null>(null);
+  const [routingSaving, setRoutingSaving] = useState(false);
+  const [routingSaved, setRoutingSaved] = useState(false);
+  const [probingNetwork, setProbingNetwork] = useState(false);
 
   const [deploymentsPath, setDeploymentsPath] = useState("");
   const [defaultDeploymentsPath, setDefaultDeploymentsPath] = useState("");
@@ -50,6 +93,21 @@ export default function SettingsPage() {
         if (typeof data.securityChecksEnabled === "boolean") {
           setSecurityChecksEnabled(data.securityChecksEnabled);
         }
+        if (data.routingMode) {
+          setRoutingMode(data.routingMode);
+        }
+        if (data.executionMode) {
+          setExecutionMode(data.executionMode);
+        }
+        if (data.domainProvider) {
+          setDomainProvider(data.domainProvider);
+        }
+        if (data.customRootDomain !== undefined) {
+          setCustomRootDomain(data.customRootDomain);
+        }
+        if (data.network) {
+          setServerNetwork(data.network);
+        }
         setDeploymentsPath(data.deploymentsPath ?? "");
         setDefaultDeploymentsPath(data.defaultDeploymentsPath ?? "");
         if (data.apiKeys) {
@@ -58,6 +116,16 @@ export default function SettingsPage() {
         setAutonomousLoading(false);
       })
       .catch(() => setAutonomousLoading(false));
+
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.user) {
+          setUserProfile(data.user);
+          setProfileName(data.user.name || "");
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleSaveApiKeys = async (e?: React.FormEvent, specificKey?: string) => {
@@ -148,6 +216,72 @@ export default function SettingsPage() {
     setSecurityChecksSaving(false);
   };
 
+  const handleSelectExecutionMode = async (mode: "plan" | "action") => {
+    setExecutionMode(mode);
+    setExecutionModeSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ executionMode: mode }),
+      });
+      if (res.ok) {
+        setExecutionModeSaved(true);
+        setTimeout(() => setExecutionModeSaved(false), 2000);
+      }
+    } catch {
+      // silent
+    } finally {
+      setExecutionModeSaving(false);
+    }
+  };
+
+  const handleSaveRouting = async (
+    newRoutingMode?: "port" | "domain",
+    newProvider?: "sslip" | "custom",
+    newRoot?: string
+  ) => {
+    setRoutingSaving(true);
+    const m = newRoutingMode !== undefined ? newRoutingMode : routingMode;
+    const p = newProvider !== undefined ? newProvider : domainProvider;
+    const r = newRoot !== undefined ? newRoot : customRootDomain;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          routingMode: m,
+          domainProvider: p,
+          customRootDomain: r.trim(),
+        }),
+      });
+      if (res.ok) {
+        setRoutingSaved(true);
+        setTimeout(() => setRoutingSaved(false), 2500);
+      }
+    } catch {
+      // silent
+    } finally {
+      setRoutingSaving(false);
+    }
+  };
+
+  const handleProbeNetwork = async () => {
+    setProbingNetwork(true);
+    try {
+      const res = await fetch("/api/settings?refresh=1");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.network) setServerNetwork(data.network);
+        if (data.routingMode && !routingMode) setRoutingMode(data.routingMode);
+      }
+    } catch {
+      // silent
+    } finally {
+      setProbingNetwork(false);
+    }
+  };
+
   const handleSaveDeploymentsPath = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setDeploymentsSaving(true);
@@ -185,10 +319,93 @@ export default function SettingsPage() {
     setDeploymentsSaving(false);
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    setProfileSaving(true);
+    setProfileError("");
+    try {
+      const res = await fetch("/api/auth/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: profileName }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setProfileError(data.error || "Failed to update profile");
+      } else {
+        if (data.user) {
+          setUserProfile(data.user);
+          setProfileName(data.user.name || "");
+        }
+        setProfileSaved(true);
+        setTimeout(() => setProfileSaved(false), 2500);
+      }
+    } catch {
+      setProfileError("Network error. Please try again.");
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError("");
+    setPasswordSuccess("");
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError("All password fields are required");
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setPasswordError("New password must be at least 8 characters");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New passwords do not match");
+      return;
+    }
+
+    if (currentPassword === newPassword) {
+      setPasswordError("New password must be different from current password");
+      return;
+    }
+
+    setPasswordSaving(true);
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+          confirmPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPasswordError(data.error || "Failed to change password");
+      } else {
+        setPasswordSuccess("Password changed successfully!");
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+        setTimeout(() => setPasswordSuccess(""), 4000);
+      }
+    } catch {
+      setPasswordError("Network error. Please try again.");
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
+  const handleResetPasswordForm = () => {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordError("");
+    setPasswordSuccess("");
   };
 
   const PROVIDER_CARDS = [
@@ -598,6 +815,97 @@ export default function SettingsPage() {
               </span>
             </div>
           )}
+
+          {/* Build & Execution Mode (Plan vs Action) */}
+          <div className="mt-5 pt-5 border-t border-white/[0.08]">
+            <div className="flex items-center justify-between mb-3.5">
+              <div>
+                <div className="text-sm font-medium text-white mb-0.5 flex items-center gap-2">
+                  <span>Build & Execution Mode</span>
+                  {executionModeSaved && (
+                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded animate-fade-in">
+                      ✓ Saved
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-[#52525b]">
+                  Control whether the AI plans first with checklists and waits for approval, or takes direct action. Can be overridden per prompt with <code className="font-mono text-white/70">/plan</code> or <code className="font-mono text-white/70">/action</code>.
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Plan First, Then Action */}
+              <div
+                onClick={() => handleSelectExecutionMode("plan")}
+                className="p-4 rounded-lg cursor-pointer transition-all flex flex-col justify-between"
+                style={{
+                  background: executionMode === "plan" ? "#161616" : "#111",
+                  border: executionMode === "plan" ? "1px solid rgba(255,255,255,0.3)" : "1px solid #222",
+                }}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0"
+                        style={{
+                          borderColor: executionMode === "plan" ? "#fff" : "rgba(255,255,255,0.3)",
+                          background: executionMode === "plan" ? "#fff" : "transparent",
+                        }}
+                      >
+                        {executionMode === "plan" && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-black" />
+                        )}
+                      </div>
+                      <span className="text-sm font-medium text-white">Plan First</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-white/40 px-1.5 py-0.5 rounded bg-white/[0.04]">
+                      /plan
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#888] leading-relaxed">
+                    Formulates a step-by-step checklist in the Tool Window. Requires clicking &ldquo;Proceed with Plan&rdquo; before executing modifications.
+                  </p>
+                </div>
+              </div>
+
+              {/* Direct Action */}
+              <div
+                onClick={() => handleSelectExecutionMode("action")}
+                className="p-4 rounded-lg cursor-pointer transition-all flex flex-col justify-between"
+                style={{
+                  background: executionMode === "action" ? "#161616" : "#111",
+                  border: executionMode === "action" ? "1px solid rgba(255,255,255,0.3)" : "1px solid #222",
+                }}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0"
+                        style={{
+                          borderColor: executionMode === "action" ? "#fff" : "rgba(255,255,255,0.3)",
+                          background: executionMode === "action" ? "#fff" : "transparent",
+                        }}
+                      >
+                        {executionMode === "action" && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-black" />
+                        )}
+                      </div>
+                      <span className="text-sm font-medium text-white">Direct Action</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-500/10">
+                      /action
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#888] leading-relaxed">
+                    Directly executes tasks, terminal commands, and tool calls without preliminary checklist approval steps.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Automatic Security Checks Card */}
@@ -696,6 +1004,245 @@ export default function SettingsPage() {
           )}
         </div>
 
+        {/* Deployment Routing Mode (Ports vs. Domain) */}
+        <div
+          className="ray-card p-6 mb-4"
+          style={{
+            background: "#0a0a0a",
+            border: "1px solid #1a1a1a",
+            borderRadius: "12px",
+          }}
+        >
+          {/* Section Header */}
+          <div className="mb-4">
+            <h2 className="font-jersey text-xl text-white tracking-wide mb-1">
+              Deployment Routing Mode
+            </h2>
+            <p className="text-xs text-[#52525b]">
+              Configure whether projects are accessed via direct host ports or exposed through wildcard and custom domain routing.
+            </p>
+          </div>
+
+          {/* Network Auto-Detection Banner */}
+          {serverNetwork && (
+            <div
+              className="flex items-center justify-between p-3 rounded-lg mb-4"
+              style={{ background: "#111", border: "1px solid #222" }}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="text-xs text-[#888]">Server Network:</span>
+                {serverNetwork.isPubliclyExposed ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-mono text-emerald-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Public Server: {serverNetwork.publicIp}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-mono text-amber-300">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                    Local / Private: {serverNetwork.localIp || "127.0.0.1"}
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleProbeNetwork}
+                disabled={probingNetwork}
+                className="ray-btn-ghost text-xs px-2.5 py-1 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                title="Probe dashboard ports (4567, 3000) to verify external reachability"
+              >
+                <Icon
+                  icon="lucide:refresh-cw"
+                  width={11}
+                  height={11}
+                  className={probingNetwork ? "animate-spin" : ""}
+                />
+                <span>{probingNetwork ? "Probing..." : "Re-probe"}</span>
+              </button>
+            </div>
+          )}
+
+          {/* Mode Selector Options */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+            {/* Ports Mode Card */}
+            <div
+              onClick={() => setRoutingMode("port")}
+              className="p-4 rounded-lg cursor-pointer transition-all flex flex-col justify-between"
+              style={{
+                background: routingMode === "port" ? "#161616" : "#111",
+                border: routingMode === "port" ? "1px solid rgba(255,255,255,0.3)" : "1px solid #222",
+              }}
+            >
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0"
+                      style={{
+                        borderColor: routingMode === "port" ? "#fff" : "rgba(255,255,255,0.3)",
+                        background: routingMode === "port" ? "#fff" : "transparent",
+                      }}
+                    >
+                      {routingMode === "port" && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-black" />
+                      )}
+                    </div>
+                    <span className="text-sm font-medium text-white">Ports Mode</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-[#71717a] px-1.5 py-0.5 rounded bg-white/[0.04]">
+                    :port
+                  </span>
+                </div>
+                <p className="text-xs text-[#888] leading-relaxed">
+                  Deployments run on allocated host ports (e.g. :4000, :4001). Ideal for local machines or private networks.
+                </p>
+              </div>
+            </div>
+
+            {/* Domain Mode Card */}
+            <div
+              onClick={() => setRoutingMode("domain")}
+              className="p-4 rounded-lg cursor-pointer transition-all flex flex-col justify-between"
+              style={{
+                background: routingMode === "domain" ? "#161616" : "#111",
+                border: routingMode === "domain" ? "1px solid rgba(255,255,255,0.3)" : "1px solid #222",
+              }}
+            >
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0"
+                      style={{
+                        borderColor: routingMode === "domain" ? "#fff" : "rgba(255,255,255,0.3)",
+                        background: routingMode === "domain" ? "#fff" : "transparent",
+                      }}
+                    >
+                      {routingMode === "domain" && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-black" />
+                      )}
+                    </div>
+                    <span className="text-sm font-medium text-white">Domain Mode</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-500/10">
+                    sslip.io / Custom
+                  </span>
+                </div>
+                <p className="text-xs text-[#888] leading-relaxed">
+                  Reverse proxies inbound requests via sslip.io wildcard subdomains or your custom root domain.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Expanded Domain Configuration Settings */}
+          {routingMode === "domain" && (
+            <div
+              className="p-4 rounded-lg mb-4 space-y-3"
+              style={{ background: "#0e0e0e", border: "1px solid #222" }}
+            >
+              <div className="text-xs font-medium text-[#a1a1aa] uppercase tracking-wide">
+                Domain Provider
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* sslip.io Option */}
+                <div
+                  onClick={() => setDomainProvider("sslip")}
+                  className="p-3 rounded-lg cursor-pointer transition-all"
+                  style={{
+                    background: domainProvider === "sslip" ? "#181818" : "#111",
+                    border: domainProvider === "sslip" ? "1px solid rgba(255,255,255,0.3)" : "1px solid #222",
+                  }}
+                >
+                  <div className="text-xs font-medium text-white mb-0.5">
+                    sslip.io (Zero-Config)
+                  </div>
+                  <p className="text-[11px] font-mono text-[#888] truncate mb-1">
+                    &lt;proj&gt;.{(serverNetwork?.publicIp || serverNetwork?.localIp || "127.0.0.1")}.sslip.io
+                  </p>
+                  <p className="text-[11px] text-[#666]">
+                    Resolves directly to your IP without DNS setup.
+                  </p>
+                </div>
+
+                {/* Custom Root Domain Option */}
+                <div
+                  onClick={() => setDomainProvider("custom")}
+                  className="p-3 rounded-lg cursor-pointer transition-all"
+                  style={{
+                    background: domainProvider === "custom" ? "#181818" : "#111",
+                    border: domainProvider === "custom" ? "1px solid rgba(255,255,255,0.3)" : "1px solid #222",
+                  }}
+                >
+                  <div className="text-xs font-medium text-white mb-0.5">
+                    Custom Root Domain
+                  </div>
+                  <p className="text-[11px] font-mono text-[#888] truncate mb-1">
+                    &lt;proj&gt;.{(customRootDomain || "yourdomain.com")}
+                  </p>
+                  <p className="text-[11px] text-[#666]">
+                    Assign custom subdomains per project.
+                  </p>
+                </div>
+              </div>
+
+              {/* Custom Root Domain Input */}
+              {domainProvider === "custom" && (
+                <div className="pt-2 border-t border-[#222] space-y-2">
+                  <label className="block text-xs font-medium text-[#a1a1aa] uppercase tracking-wide">
+                    Your Root Domain
+                  </label>
+                  <input
+                    type="text"
+                    className="ray-input font-mono text-xs w-full"
+                    placeholder="e.g. putme.in, devops.io, or company.com"
+                    value={customRootDomain}
+                    onChange={(e) => setCustomRootDomain(e.target.value)}
+                  />
+                  <div
+                    className="p-3 rounded-lg text-xs text-[#888] flex items-start gap-2 leading-relaxed"
+                    style={{ background: "#050505", border: "1px solid #1a1a1a" }}
+                  >
+                    <span className="text-white font-mono font-bold shrink-0">DNS Guide:</span>
+                    <span>
+                      Add a Wildcard A-Record in your DNS provider:{" "}
+                      <code className="text-white font-mono font-semibold">*.{customRootDomain || "yourdomain.com"}</code> pointing to{" "}
+                      <code className="text-emerald-400 font-mono font-semibold">{serverNetwork?.publicIp || "your server IP"}</code>.
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Action Row */}
+          <div className="flex items-center justify-between pt-3 border-t border-[#1a1a1a] flex-wrap gap-3">
+            <div className="text-xs text-[#52525b]">
+              {routingMode === "domain"
+                ? "Deployments and AI agents will create domain routes using the selected provider."
+                : "Deployments and AI agents will map conflict-free host ports on localhost."}
+            </div>
+            <button
+              type="button"
+              onClick={() => handleSaveRouting()}
+              disabled={routingSaving}
+              className="ray-btn-primary px-4 py-2 text-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              {routingSaving ? (
+                <span>Saving…</span>
+              ) : routingSaved ? (
+                <span className="text-emerald-600 font-bold flex items-center gap-1.5">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg>
+                  <span>Saved!</span>
+                </span>
+              ) : (
+                <span>Save Routing Settings</span>
+              )}
+            </button>
+          </div>
+        </div>
+
         {/* Deployments & Containers Base Directory */}
         <div
           className="ray-card p-6 mb-4"
@@ -781,43 +1328,83 @@ export default function SettingsPage() {
             borderRadius: "12px",
           }}
         >
-          <h2 className="font-jersey text-xl text-white tracking-wide mb-5">
-            Profile
-          </h2>
-          <form onSubmit={handleSave} className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-[#a1a1aa] uppercase tracking-wide">
-                Display Name
-              </label>
-              <input
-                className="ray-input"
-                type="text"
-                placeholder="Your name"
-                defaultValue=""
-              />
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="font-jersey text-xl text-white tracking-wide">
+                Profile & Account
+              </h2>
+              <p className="text-xs text-[#52525b] mt-0.5">
+                Manage your account credentials and login security.
+              </p>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-[#a1a1aa] uppercase tracking-wide">
-                Email
-              </label>
-              <input
-                className="ray-input"
-                type="email"
-                placeholder="you@example.com"
-                defaultValue=""
-              />
+            {userProfile?.role && (
+              <span className="ray-badge flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-mono tracking-wider">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                {userProfile.role}
+              </span>
+            )}
+          </div>
+
+          {/* Profile Details Form */}
+          <form onSubmit={handleSaveProfile} className="flex flex-col gap-4">
+            {profileError && (
+              <div className="p-3 rounded-lg text-xs bg-red-500/10 border border-red-500/25 text-red-400 flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <span>{profileError}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-[#a1a1aa] uppercase tracking-wide">
+                  Display Name
+                </label>
+                <input
+                  className="ray-input"
+                  type="text"
+                  placeholder="Your name"
+                  value={profileName}
+                  onChange={(e) => setProfileName(e.target.value)}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-[#a1a1aa] uppercase tracking-wide">
+                    Email Address
+                  </label>
+                  {userProfile?.createdAt && (
+                    <span className="text-[10px] text-white/30 font-mono">
+                      Joined {new Date(userProfile.createdAt).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+                <input
+                  className="ray-input text-white/60 bg-white/[0.02] cursor-not-allowed border-white/[0.05]"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={userProfile?.email || ""}
+                  readOnly
+                  disabled
+                />
+              </div>
             </div>
+
             <div className="flex items-center gap-3 pt-1">
               <button
                 type="submit"
-                className="ray-btn-primary px-5 py-2"
-                style={{ fontSize: "0.875rem" }}
+                disabled={profileSaving || !profileName.trim() || profileName === (userProfile?.name || "")}
+                className="ray-btn-primary px-4 py-2 text-xs flex items-center gap-2 cursor-pointer"
               >
-                {saved ? (
-                  <span className="flex items-center gap-2">
+                {profileSaved ? (
+                  <>
                     <svg
-                      width="14"
-                      height="14"
+                      width="13"
+                      height="13"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
@@ -827,14 +1414,171 @@ export default function SettingsPage() {
                     >
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
-                    Saved!
-                  </span>
+                    <span>Saved!</span>
+                  </>
+                ) : profileSaving ? (
+                  "Saving..."
                 ) : (
-                  "Save Changes"
+                  "Save Profile"
                 )}
               </button>
             </div>
           </form>
+
+          {/* Divider */}
+          <div className="my-6 border-t border-white/[0.06]" />
+
+          {/* Change Password Sub-Section */}
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/60">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <h3 className="font-jersey text-lg text-white tracking-wide">
+                Change Password
+              </h3>
+            </div>
+            <p className="text-xs text-[#52525b] mb-4">
+              Update your password to keep your dashboard and deployments secure.
+            </p>
+
+            <form onSubmit={handleChangePassword} className="flex flex-col gap-4">
+              {passwordError && (
+                <div className="p-3 rounded-lg text-xs bg-red-500/10 border border-red-500/25 text-red-400 flex items-center gap-2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  <span>{passwordError}</span>
+                </div>
+              )}
+
+              {passwordSuccess && (
+                <div className="p-3 rounded-lg text-xs bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 flex items-center gap-2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span>{passwordSuccess}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Current Password */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-[#a1a1aa] uppercase tracking-wide">
+                    Current Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      className="ray-input pr-14 font-mono text-xs"
+                      type={showCurrentPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      autoComplete="current-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword((v) => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-white/40 hover:text-white px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                    >
+                      {showCurrentPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* New Password */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-[#a1a1aa] uppercase tracking-wide">
+                      New Password
+                    </label>
+                    {newPassword && (
+                      <span className={`text-[10px] font-mono ${newPassword.length >= 8 ? "text-emerald-400" : "text-amber-400"}`}>
+                        {newPassword.length >= 8 ? "✓ 8+ chars" : `${newPassword.length}/8 chars`}
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      className="ray-input pr-14 font-mono text-xs"
+                      type={showNewPassword ? "text" : "password"}
+                      placeholder="Min. 8 characters"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((v) => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-white/40 hover:text-white px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                    >
+                      {showNewPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Confirm New Password */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-[#a1a1aa] uppercase tracking-wide">
+                      Confirm Password
+                    </label>
+                    {confirmPassword && (
+                      <span className={`text-[10px] font-mono ${newPassword === confirmPassword ? "text-emerald-400" : "text-red-400"}`}>
+                        {newPassword === confirmPassword ? "✓ Match" : "✕ Mismatch"}
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      className="ray-input pr-14 font-mono text-xs"
+                      type={showConfirmPassword ? "text" : "password"}
+                      placeholder="Repeat new password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword((v) => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-white/40 hover:text-white px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                    >
+                      {showConfirmPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  type="submit"
+                  disabled={passwordSaving || !currentPassword || !newPassword || !confirmPassword}
+                  className="ray-btn-primary px-4 py-2 text-xs flex items-center gap-2 cursor-pointer"
+                >
+                  {passwordSaving && (
+                    <svg className="animate-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                    </svg>
+                  )}
+                  <span>{passwordSaving ? "Updating Password..." : "Update Password"}</span>
+                </button>
+
+                {(currentPassword || newPassword || confirmPassword) && (
+                  <button
+                    type="button"
+                    onClick={handleResetPasswordForm}
+                    disabled={passwordSaving}
+                    className="ray-btn-ghost px-3 py-2 text-xs cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
         </div>
 
         {/* GitHub Integration Section */}

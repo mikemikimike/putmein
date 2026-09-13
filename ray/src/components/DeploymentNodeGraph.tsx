@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { getPrimaryProjectUrl } from "@/lib/domains";
 
 export interface DeployStepState {
   step: string;
@@ -141,7 +142,7 @@ export default function DeploymentNodeGraph({
   });
   const progressPercent = Math.round((completedCount / PIPELINE_NODES.length) * 100);
 
-  const activeUrl = deployUrl || (hostPort ? `http://localhost:${hostPort}` : null);
+  const activeUrl = getPrimaryProjectUrl(deployUrl, hostPort) || (hostPort ? `http://localhost:${hostPort}` : null);
 
   return (
     <div className="flex flex-col h-full bg-[#080808] text-white select-none overflow-hidden font-sans">

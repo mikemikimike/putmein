@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@iconify/react";
 import DeployDiagnosisModal from "@/components/DeployDiagnosisModal";
+import { getPrimaryProjectUrl } from "@/lib/domains";
 
 interface DeploymentItem {
   id: string;
@@ -267,7 +268,7 @@ export default function DeploymentsPage() {
       ) : (
         <div className="flex flex-col gap-3">
           {filtered.map((dep) => {
-            const effectiveUrl = dep.deployUrl || dep.container?.url || (dep.hostPort ? `http://localhost:${dep.hostPort}` : null);
+            const effectiveUrl = getPrimaryProjectUrl(dep.deployUrl, dep.hostPort) || dep.container?.url || (dep.hostPort ? `http://localhost:${dep.hostPort}` : null);
             const containerName = dep.container?.name || dep.containerName || `ray-${dep.name}`;
 
             return (

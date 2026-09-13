@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { verifyToken } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { detectContainerStack } from "@/lib/project-detector";
+import { getPrimaryProjectUrl } from "@/lib/domains";
 
 const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
 
@@ -61,7 +62,7 @@ export async function GET(req: NextRequest) {
       return {
         ...c,
         port: c.port || matchedDep?.hostPort,
-        url: c.url || matchedDep?.deployUrl || (matchedDep?.hostPort ? `http://localhost:${matchedDep.hostPort}` : null),
+        url: getPrimaryProjectUrl(matchedProj?.projectUrl || matchedDep?.deployUrl, c.port || matchedDep?.hostPort) || c.url || (matchedDep?.hostPort ? `http://localhost:${matchedDep.hostPort}` : null),
         framework: stack.framework,
         frameworkSlug: stack.frameworkSlug,
         language: stack.language,

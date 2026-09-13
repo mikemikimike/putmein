@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@iconify/react";
 import DeployDiagnosisModal from "@/components/DeployDiagnosisModal";
+import { getPrimaryProjectUrl } from "@/lib/domains";
 
 interface PipelineStage {
   id: string;
@@ -193,7 +194,7 @@ export default function CicdDetailPage({
   const isRunning = pipeline?.status === "running" || latestRun?.status === "running" || stagesRunning;
   const isSuccess = !isRunning && !isBlockedDanger && (latestRun ? (latestRun.status === "success" && !stagesRunning) : pipeline?.status === "success");
   const isFailed = !isRunning && !isBlockedDanger && (latestRun ? latestRun.status === "failed" : pipeline?.status === "failed");
-  const effectiveAppUrl = pipeline?.deployment?.deployUrl || (pipeline?.port ? `http://localhost:${pipeline.port}` : null);
+  const effectiveAppUrl = getPrimaryProjectUrl(pipeline?.deployment?.deployUrl, pipeline?.port) || (pipeline?.port ? `http://localhost:${pipeline.port}` : null);
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6 font-sans">

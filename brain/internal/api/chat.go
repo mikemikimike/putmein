@@ -1,9 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -53,6 +55,7 @@ type chatRequest struct {
 	MonitorProjects []monitorProjectDTO `json:"monitorProjects,omitempty"`
 	GitHubToken     string              `json:"githubToken,omitempty"`
 	GitHubUsername  string              `json:"githubUsername,omitempty"`
+	ExecutionMode   string              `json:"executionMode,omitempty"`
 }
 
 // ── Tool tag regexes (same as agent package) ─────────────────────────────────
@@ -72,6 +75,10 @@ var (
 	chatPathAttrRe   = regexp.MustCompile(`path="([^"]+)"`)
 	chatPortAttrRe   = regexp.MustCompile(`port="?(\d+)"?`)
 	chatCheckPortsRe = regexp.MustCompile(`(?s)<check_ports\s*/?>`)
+	chatSetDomainsRe = regexp.MustCompile(`<set_domains\s+([^>]+)>?`)
+	chatProjectAttrRe = regexp.MustCompile(`project="([^"]+)"`)
+	chatDomainsAttrRe = regexp.MustCompile(`domains="([^"]+)"`)
+	chatPlanTagRe    = regexp.MustCompile(`(?s)<plan(?:\s+title="([^"]+)")?\s*>(.*?)</plan>`)
 )
 
 // detectTool parses text for any tool tag and returns (toolName, cmdOrPath, found)
@@ -79,6 +86,19 @@ var (
 func detectTool(text string) (toolName, arg string, found bool) {
 	if chatCheckPortsRe.MatchString(text) {
 		return "check_ports", "", true
+	}
+	if m := chatSetDomainsRe.FindStringSubmatch(text); len(m) > 1 {
+		attrs := m[1]
+		var project, domains string
+		if pm := chatProjectAttrRe.FindStringSubmatch(attrs); len(pm) > 1 {
+			project = strings.TrimSpace(pm[1])
+		}
+		if dm := chatDomainsAttrRe.FindStringSubmatch(attrs); len(dm) > 1 {
+			domains = strings.TrimSpace(dm[1])
+		}
+		if project != "" && domains != "" {
+			return "set_domains", project + "|" + domains, true
+		}
 	}
 	if m := chatExecRe.FindStringSubmatch(text); len(m) > 1 {
 		return "exec", strings.TrimSpace(m[1]), true
@@ -151,6 +171,9 @@ func hasIncompleteIntent(text string) bool {
 		return true
 	}
 	if strings.Contains(trimmed, "<deploy") && !strings.Contains(trimmed, ">") {
+		return true
+	}
+	if strings.Contains(trimmed, "<set_domains") && !strings.Contains(trimmed, ">") {
 		return true
 	}
 	if strings.Contains(trimmed, "<monitor_add") && !strings.Contains(trimmed, ">") {
@@ -280,6 +303,55 @@ func runDetectedTool(ctx context.Context, text, toolName, arg, userID, githubTok
 			onProgress(res)
 		}
 		return res
+	case "set_domains":
+		// arg is "project|domains"
+		parts := strings.SplitN(arg, "|", 2)
+		projectNameOrID := parts[0]
+		domains := ""
+		if len(parts) > 1 {
+			domains = parts[1]
+		}
+		rayURL := os.Getenv("RAY_URL")
+		if rayURL == "" {
+			rayURL = "http://localhost:3000"
+		}
+		secret := os.Getenv("BRAIN_INTERNAL_SECRET")
+		if secret == "" {
+			secret = "brain-ray-internal-putmein-2024"
+		}
+		payload, _ := json.Marshal(map[string]any{
+			"id":         projectNameOrID,
+			"name":       projectNameOrID,
+			"projectUrl": domains,
+		})
+		httpReq, err := http.NewRequestWithContext(ctx, "PATCH", rayURL+"/api/monitor/internal/update-project", bytes.NewReader(payload))
+		if err != nil {
+			return fmt.Sprintf("Error creating request to update domains: %v", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("x-brain-secret", secret)
+		client := &http.Client{Timeout: 8 * time.Second}
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			return fmt.Sprintf("Error connecting to dashboard API to set domains: %v", err)
+		}
+		defer resp.Body.Close()
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode >= 400 {
+			var errResp struct {
+				Error string `json:"error"`
+			}
+			_ = json.Unmarshal(bodyBytes, &errResp)
+			if errResp.Error != "" {
+				return fmt.Sprintf("Failed to update domains: %s", errResp.Error)
+			}
+			return fmt.Sprintf("Failed to update domains (status %d): %s", resp.StatusCode, string(bodyBytes))
+		}
+		res := fmt.Sprintf("Successfully assigned domains [%s] to project %q. Inbound requests on these domains will reverse-proxy directly to the project container.", domains, projectNameOrID)
+		if onProgress != nil {
+			onProgress(res)
+		}
+		return res
 	case "monitor_add":
 		// arg is "name|path"
 		parts := strings.SplitN(arg, "|", 2)
@@ -287,9 +359,17 @@ func runDetectedTool(ctx context.Context, text, toolName, arg, userID, githubTok
 		path := ""
 		if len(parts) > 1 { path = parts[1] }
 		if err := monitor.AddProjectFromChat(userID, name, path, 30); err != nil {
-			return fmt.Sprintf("Error adding to monitor: %v", err)
+			errStr := fmt.Sprintf("Error adding to monitor: %v", err)
+			if onProgress != nil {
+				onProgress(errStr + "\n")
+			}
+			return errStr
 		}
-		return fmt.Sprintf("Project %q is now being monitored at %s", name, path)
+		res := fmt.Sprintf("Project %q is now being monitored at %s", name, path)
+		if onProgress != nil {
+			onProgress(res + "\n")
+		}
+		return res
 	}
 	return "unknown tool"
 }
@@ -552,6 +632,41 @@ func injectPortRegistryContext(userInput string, reqProjects []monitorProjectDTO
 	sb.WriteString("  * ALWAYS prefer <deploy name=\"name\" path=\"path\"> which automatically checks dashboard projects, active containers, and system sockets to assign a guaranteed conflict-free host port.\n")
 	sb.WriteString("  * If running docker manually via <exec>, you MUST only use a port from the Next Guaranteed Free Host Ports list above.\n")
 
+	// Append Routing Mode & Registered Domains context
+	mode := agent.GetRoutingMode()
+	provider := agent.GetDomainProvider()
+	customRoot := agent.GetCustomRootDomain()
+
+	sb.WriteString("\n[DEPLOYMENT ROUTING MODE & REGISTERED DOMAINS]\n")
+	sb.WriteString(fmt.Sprintf("- Current Server Routing Mode: %s\n", strings.ToUpper(mode)))
+	if mode == "domain" {
+		sb.WriteString(fmt.Sprintf("- Domain Provider: %s\n", provider))
+		if customRoot != "" {
+			sb.WriteString(fmt.Sprintf("- Custom Root Domain: %s\n", customRoot))
+		}
+	}
+
+	var registeredDomains []string
+	for _, rp := range reqProjects {
+		if rp.ProjectUrl != "" {
+			registeredDomains = append(registeredDomains, fmt.Sprintf("%s -> %s", rp.Name, rp.ProjectUrl))
+		}
+	}
+	if len(registeredDomains) > 0 {
+		sb.WriteString("- Currently Registered Domains across Projects:\n")
+		for _, rd := range registeredDomains {
+			sb.WriteString(fmt.Sprintf("  * %s\n", rd))
+		}
+	} else {
+		sb.WriteString("- Currently Registered Domains: (None yet configured)\n")
+	}
+
+	sb.WriteString("- DOMAIN ASSIGNMENT TOOL:\n")
+	sb.WriteString("  * You can assign or change domains for any project using: <set_domains project=\"project-name\" domains=\"http://app.sslip.io, https://custom.com\"/>\n")
+	sb.WriteString("  * The first domain listed is the primary URL used by the dashboard and \"Open App\" buttons.\n")
+	sb.WriteString("  * NEVER reuse an already registered domain for another project; duplicate domains are rejected.\n")
+	sb.WriteString("  * When deploying with <deploy name=\"...\" path=\"...\">, the deployment engine automatically provisions a domain or port based on the active routing mode.\n")
+
 	return userInput + sb.String()
 }
 
@@ -604,6 +719,24 @@ func chatStreamHandler(w http.ResponseWriter, r *http.Request) {
 	// Inject deployment directory configuration
 	deployDir := agent.GetDeploymentsDir()
 	userInput += fmt.Sprintf("\n\n[DEPLOYMENT DIRECTORY CONFIGURATION]\n- Active base deployments directory: `%s`\n- When cloning repositories, creating workspaces, or deploying containers, ALWAYS use subfolders inside this base path (e.g. `%s/<project-name>`).\n- Never create deployment project folders in random paths or the workspace root.", deployDir, deployDir)
+
+	// Resolve execution mode ("plan" vs "action")
+	execMode := strings.ToLower(strings.TrimSpace(req.ExecutionMode))
+	if execMode == "" {
+		execMode = agent.GetExecutionMode()
+	}
+	// If user explicitly asks to proceed, switch to action mode for this turn
+	lowerInput := strings.ToLower(userInput)
+	if strings.Contains(lowerInput, "proceed with plan") || strings.Contains(lowerInput, "proceed with the plan") || strings.Contains(lowerInput, "proceed to plan") {
+		execMode = "action"
+	}
+
+	userInput += fmt.Sprintf("\n\n[BUILD & EXECUTION MODE: %s]\n", strings.ToUpper(execMode))
+	if execMode == "plan" {
+		userInput += "- You are currently in PLAN MODE. You MUST FIRST output a structured plan using <plan title=\"...\">...</plan> containing goals, markdown checklists (- [ ] ...), and proposed file edits/commands.\n- In PLAN MODE, do NOT call mutating tools (<deploy>, destructive <exec>) until the user explicitly approves by clicking Proceed.\n"
+	} else {
+		userInput += "- You are currently in ACTION MODE: Directly execute requested tools, commands, and deployments without waiting for a planning gate.\n"
+	}
 
 	// Inject GitHub integration context if active
 	if req.GitHubUsername != "" || req.GitHubToken != "" {
@@ -679,6 +812,58 @@ func chatStreamHandler(w http.ResponseWriter, r *http.Request) {
 		// Debug: log raw AI response to stderr so we can see what the AI actually produces
 		fmt.Fprintf(os.Stderr, "[chat] AI iter %d raw (%.120s)\n", iter, strings.ReplaceAll(text, "\n", " "))
 
+		// ── Detect plan block and emit plan event ─────────────────────────
+		if pm := chatPlanTagRe.FindStringSubmatch(text); len(pm) > 2 {
+			planTitle := strings.TrimSpace(pm[1])
+			if planTitle == "" {
+				planTitle = "Execution Plan"
+			}
+			planBody := strings.TrimSpace(pm[2])
+
+			var checklist []string
+			for _, line := range strings.Split(planBody, "\n") {
+				tl := strings.TrimSpace(line)
+				if strings.HasPrefix(tl, "- [ ]") || strings.HasPrefix(tl, "- [x]") || strings.HasPrefix(tl, "* [ ]") {
+					item := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(tl, "- [ ]"), "* [ ]"))
+					if item != "" {
+						checklist = append(checklist, item)
+					}
+				}
+			}
+
+			_ = ai.WriteSSEEvent(w, map[string]any{
+				"type":      "plan-created",
+				"title":     planTitle,
+				"content":   planBody,
+				"checklist": checklist,
+			})
+
+			// If in plan mode and this is not a proceed turn, pause for user approval
+			if execMode == "plan" && !strings.Contains(strings.ToLower(userInput), "proceed with plan") {
+				cleanText := text
+				thinkRe := regexp.MustCompile(`(?s)<think>(.*?)</think>`)
+				if tm := thinkRe.FindStringSubmatch(text); len(tm) > 1 {
+					_ = ai.WriteSSEThinking(w, strings.TrimSpace(tm[1])+"\n\n")
+					cleanText = thinkRe.ReplaceAllString(cleanText, "")
+				}
+				cleanText = strings.TrimSpace(cleanText)
+
+				if len(cleanText) > 0 {
+					const chunkSize = 32
+					runes := []rune(cleanText)
+					for i := 0; i < len(runes); i += chunkSize {
+						end := i + chunkSize
+						if end > len(runes) {
+							end = len(runes)
+						}
+						_ = ai.WriteSSETextDelta(w, string(runes[i:end]))
+					}
+				}
+				ai.WriteSSEFinish(w)
+				return
+			}
+		}
+
 		// ── Detect tool (parse only — do NOT execute yet) ──────────────────
 		toolName, toolArg, found := detectTool(text)
 		if !found {
@@ -717,12 +902,20 @@ func chatStreamHandler(w http.ResponseWriter, r *http.Request) {
 		// For exec, toolArg IS the command string displayed in terminal.
 		// For other tools, build a human-readable command string.
 		cmdStr := toolArg
-		if toolName != "exec" {
+		if toolName == "monitor_add" {
+			parts := strings.SplitN(toolArg, "|", 2)
+			pName := parts[0]
+			pPath := ""
+			if len(parts) > 1 {
+				pPath = parts[1]
+			}
+			cmdStr = fmt.Sprintf("monitor_add name=%q path=%q", pName, pPath)
+		} else if toolName != "exec" {
 			cmdStr = toolName + " " + toolArg
 		}
 
-		// ── Approval gate (non-autonomous only) ─────────────────────────
-		if !autonomous {
+		// ── Approval gate (non-autonomous only for dangerous/destructive commands) ──
+		if !autonomous && agent.RequiresApproval(toolName, cmdStr) {
 			// Stream prose before the tool tag (AI's reasoning)
 			if loc := toolTagRe.FindStringIndex(text); loc != nil {
 				prose := strings.TrimSpace(text[:loc[0]])
@@ -786,33 +979,6 @@ func chatStreamHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// ── NOW execute the tool (after permission obtained) ─────────────────
-		// monitor_add: skip terminal, emit chat confirmation and finish
-		if toolName == "monitor_add" {
-			toolOutput := runDetectedTool(ctx, text, toolName, toolArg, userID, req.GitHubToken, nil)
-			exitCode := 0
-			if strings.Contains(toolOutput, "Error") {
-				exitCode = 1
-			}
-			// Stream the AI's prose before the tag (already done for non-auto; do it now for auto)
-			if autonomous {
-				if loc := toolTagRe.FindStringIndex(text); loc != nil {
-					prose := strings.TrimSpace(text[:loc[0]])
-					if prose != "" {
-						ai.WriteSSETextDelta(w, prose)
-					}
-				}
-			}
-			if exitCode == 0 {
-				parts := strings.SplitN(toolArg, "|", 2)
-				pName := parts[0]
-				ai.WriteSSETextDelta(w, fmt.Sprintf("\n\n✅ **%s** has been added to the 24/7 monitor. You can view alerts and status in the [Monitor](/monitor) section.", pName))
-			} else {
-				ai.WriteSSETextDelta(w, fmt.Sprintf("\n\n❌ Failed to add to monitor: %s", toolOutput))
-			}
-			ai.WriteSSEFinish(w)
-			return
-		}
-
 		// Emit terminal start event before tool begins running
 		ai.WriteSSEToolStart(w, toolName, cmdStr, sysUser, sysHost)
 		toolOutput := runDetectedTool(ctx, text, toolName, toolArg, userID, req.GitHubToken, func(chunk string) {
@@ -826,6 +992,11 @@ func chatStreamHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Feed result back to AI and loop
 		feedbackMsg := fmt.Sprintf("[TOOL OUTPUT] %s result:\n%s\n\n[INSTRUCTION: When completing the user's request, provide a comprehensive, detailed final reply explaining the actions taken, technical configuration, status, and live URL. Do not provide a brief or single-line answer.]", toolName, toolOutput)
+		if toolName == "monitor_add" {
+			parts := strings.SplitN(toolArg, "|", 2)
+			pName := parts[0]
+			feedbackMsg = fmt.Sprintf("[TOOL OUTPUT] monitor_add result:\n%s\n\n[INSTRUCTION: Project %q has been successfully registered in the 24/7 monitor. NOW provide the COMPLETE DEPLOYMENT SUMMARY to the user:\n1. 🌐 Live URL: Clickable markdown link (e.g. http://localhost:<port> or http://<server-ip>:<port>)\n2. 🚢 Container Name & Status\n3. 🔌 Port Mapping (host_port:container_port)\n4. 🔑 Admin / Database credentials or URLs (e.g. /wp-admin, MySQL user & database name) if configured\n5. ⚡ Container health status\n6. 📊 Confirmation of monitor tracking at /monitor\nDO NOT just say 'it has been added to monitor'. Provide all actionable details and access links.]", toolOutput, pName)
+		}
 		history = append(history, ai.HistoryEntry{Role: "user", Content: feedbackMsg})
 		userInput = feedbackMsg
 	}
@@ -942,16 +1113,16 @@ func chatTUIHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if !autonomous {
+		cmdStr := toolArg
+		if toolName != "exec" {
+			cmdStr = toolName + " " + toolArg
+		}
+
+		if !autonomous && agent.RequiresApproval(toolName, cmdStr) {
 			notice := fmt.Sprintf("\n\n<yellow>Permission required to run %s. Use /settings to enable Autonomous Mode.</yellow>", toolName)
 			ai.WriteSSETextDelta(w, notice)
 			ai.WriteSSEFinish(w)
 			return
-		}
-
-		cmdStr := toolArg
-		if toolName != "exec" {
-			cmdStr = toolName + " " + toolArg
 		}
 
 		// Emit structured terminal events for TUI — same protocol as web

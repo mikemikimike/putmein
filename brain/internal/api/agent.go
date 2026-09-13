@@ -132,6 +132,10 @@ type settingsPayload struct {
 	Autonomous            *bool             `json:"autonomous,omitempty"`
 	DeploymentsPath       *string           `json:"deploymentsPath,omitempty"`
 	SecurityChecksEnabled *bool             `json:"securityChecksEnabled,omitempty"`
+	RoutingMode           *string           `json:"routingMode,omitempty"`
+	DomainProvider        *string           `json:"domainProvider,omitempty"`
+	CustomRootDomain      *string           `json:"customRootDomain,omitempty"`
+	ExecutionMode         *string           `json:"executionMode,omitempty"`
 	ApiKeys               map[string]string `json:"apiKeys,omitempty"`
 	RemoveApiKey          string            `json:"removeApiKey,omitempty"`
 }
@@ -145,6 +149,10 @@ func settingsHandler(w http.ResponseWriter, r *http.Request) {
 			"deploymentsPath":        agent.GetDeploymentsDir(),
 			"defaultDeploymentsPath": agent.DefaultDeploymentsDir(),
 			"securityChecksEnabled":  agent.IsSecurityChecksEnabled(),
+			"routingMode":           agent.GetRoutingMode(),
+			"domainProvider":        agent.GetDomainProvider(),
+			"customRootDomain":      agent.GetCustomRootDomain(),
+			"executionMode":         agent.GetExecutionMode(),
 			"apiKeys": map[string]bool{
 				"ozias":      ai.GetProviderKey("ozias") != "",
 				"minimax":    ai.GetProviderKey("ozias") != "",
@@ -170,6 +178,18 @@ func settingsHandler(w http.ResponseWriter, r *http.Request) {
 		if body.SecurityChecksEnabled != nil {
 			agent.SetSecurityChecksEnabled(*body.SecurityChecksEnabled)
 		}
+		if body.RoutingMode != nil {
+			agent.SetRoutingMode(*body.RoutingMode)
+		}
+		if body.DomainProvider != nil {
+			agent.SetDomainProvider(*body.DomainProvider)
+		}
+		if body.CustomRootDomain != nil {
+			agent.SetCustomRootDomain(*body.CustomRootDomain)
+		}
+		if body.ExecutionMode != nil {
+			agent.SetExecutionMode(*body.ExecutionMode)
+		}
 		if body.RemoveApiKey != "" {
 			agent.RemoveAPIKey(body.RemoveApiKey)
 		}
@@ -182,6 +202,10 @@ func settingsHandler(w http.ResponseWriter, r *http.Request) {
 			"deploymentsPath":        agent.GetDeploymentsDir(),
 			"defaultDeploymentsPath": agent.DefaultDeploymentsDir(),
 			"securityChecksEnabled":  agent.IsSecurityChecksEnabled(),
+			"routingMode":           agent.GetRoutingMode(),
+			"domainProvider":        agent.GetDomainProvider(),
+			"customRootDomain":      agent.GetCustomRootDomain(),
+			"executionMode":         agent.GetExecutionMode(),
 			"apiKeys": map[string]bool{
 				"ozias":      ai.GetProviderKey("ozias") != "",
 				"minimax":    ai.GetProviderKey("ozias") != "",

@@ -2,14 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyToken } from "@/lib/auth";
 import { getDefaultDeploymentsDir, getDeploymentsDir } from "@/lib/settings";
+import { detectServerIp } from "@/lib/network";
 import os from "os";
 
 export const runtime = "nodejs";
 
 const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
 
-// GET /api/settings — returns current agent and deployment directory settings
-export async function GET() {
+// GET /api/settings — returns current agent, routing, and deployment settings
+export async function GET(req: NextRequest) {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("ray_token")?.value;
@@ -17,8 +18,15 @@ export async function GET() {
     const user = await verifyToken(token);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+    const forceRefresh = req.nextUrl?.searchParams?.get("refresh") === "1";
+    const network = await detectServerIp(forceRefresh);
+
     let autonomous = false;
     let securityChecksEnabled = true;
+    let routingMode = network.isPubliclyExposed ? "domain" : "port";
+    let domainProvider = "sslip";
+    let customRootDomain = "";
+    let executionMode = "plan";
     let deploymentsPath = await getDeploymentsDir();
     const defaultDeploymentsPath = getDefaultDeploymentsDir();
     let apiKeys: Record<string, boolean> = {
@@ -39,6 +47,10 @@ export async function GET() {
         if (typeof data.securityChecksEnabled === "boolean") {
           securityChecksEnabled = data.securityChecksEnabled;
         }
+        if (data.routingMode) routingMode = data.routingMode;
+        if (data.domainProvider) domainProvider = data.domainProvider;
+        if (data.customRootDomain !== undefined) customRootDomain = data.customRootDomain;
+        if (data.executionMode) executionMode = data.executionMode;
         if (data.deploymentsPath) deploymentsPath = data.deploymentsPath;
         if (data.apiKeys) apiKeys = data.apiKeys;
       }
@@ -49,6 +61,11 @@ export async function GET() {
     return NextResponse.json({
       autonomous,
       securityChecksEnabled,
+      routingMode,
+      domainProvider,
+      customRootDomain,
+      executionMode,
+      network,
       deploymentsPath,
       defaultDeploymentsPath,
       platform: os.platform(),

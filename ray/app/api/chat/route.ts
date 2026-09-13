@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
       modelId = "MiniMax-M3",
       userMessageToSave,
       attachedContextItem,
+      executionMode,
     } = body;
 
     // Ensure session exists and belongs to this user
@@ -80,6 +81,7 @@ export async function POST(request: NextRequest) {
       modelId,
       userMessageToSave,
       attachedContextItem,
+      executionMode,
     });
 
     // Subscribe to SSE stream (replaying buffer + live stream)

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { getPrimaryProjectUrl } from "@/lib/domains";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1174,7 +1175,7 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
   const projectType = detectProjectType(project.logPaths, project.memory);
   const typeColor = projectTypeColors[projectType];
   const activeLogFile = managedLogFile || project.managedLogFile || (dockerContainer ? `docker:${dockerContainer.name}` : (logPaths[0] || null));
-  const effectiveUrl = project.projectUrl || detectedUrl || (detectedPort ? `http://localhost:${detectedPort}` : null);
+  const effectiveUrl = getPrimaryProjectUrl(project.projectUrl, detectedPort) || detectedUrl || (detectedPort ? `http://localhost:${detectedPort}` : null);
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">

@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Activity, Zap, RefreshCw, ShieldCheck } from "lucide-react";
 
-type TabType = "monitor" | "deploy" | "sre" | "security";
+type TabType = "ai" | "monitor" | "deploy" | "sre" | "security";
 
 interface TabConfig {
   id: TabType;
@@ -16,37 +16,44 @@ interface TabConfig {
 
 const TABS: TabConfig[] = [
   {
+    id: "ai",
+    label: "Chat Interface",
+    icon: Activity,
+    image: "/ray/ai.png",
+    alt: "Ray GUI"
+  },
+  {
     id: "monitor",
     label: "Telemetry & Monitor",
     icon: Activity,
-    image: "/ray/monitor.svg",
+    image: "/ray/monitor.png",
     alt: "Ray 24/7 Telemetry & Infrastructure Monitoring Dashboard",
   },
   {
     id: "deploy",
     label: "Autonomous Deploy",
     icon: Zap,
-    image: "/ray/deploy.svg",
+    image: "/ray/deploy.png",
     alt: "Ray Autonomous Nix Atomic Deployment Pipeline",
   },
   {
     id: "sre",
     label: "Self-Healing SRE",
     icon: RefreshCw,
-    image: "/ray/self-healing.svg",
+    image: "/ray/self-healing.png",
     alt: "Ray Self-Healing Shadow Proxy & Crash Diagnosis",
   },
   {
     id: "security",
     label: "Aegis Guardrails",
     icon: ShieldCheck,
-    image: "/ray/security.svg",
+    image: "/ray/security.png",
     alt: "Ray AegisAgent AI Security Guardrails & SOC 2 Vault",
   },
 ];
 
 export default function RayGuiPreview() {
-  const [activeTab, setActiveTab] = useState<TabType>("monitor");
+  const [activeTab, setActiveTab] = useState<TabType>("ai");
 
   const currentTab = TABS.find((t) => t.id === activeTab) || TABS[0];
 
@@ -79,11 +86,10 @@ export default function RayGuiPreview() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all cursor-pointer whitespace-nowrap ${
-                  isActive
-                    ? "bg-white text-black font-semibold shadow-sm"
-                    : "text-zinc-400 hover:text-white hover:bg-white/5"
-                }`}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all cursor-pointer whitespace-nowrap ${isActive
+                  ? "bg-white text-black font-semibold shadow-sm"
+                  : "text-zinc-400 hover:text-white hover:bg-white/5"
+                  }`}
               >
                 <Icon className="w-4 h-4" />
                 <span>{tab.label}</span>

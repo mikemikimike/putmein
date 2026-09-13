@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { getPrimaryProjectUrl } from "@/lib/domains";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -640,7 +641,7 @@ function ProjectDetailDrawer({
           <div className="flex items-center gap-2 ml-3 flex-shrink-0">
             {/* Link button */}
             {project.projectUrl && (
-              <a href={project.projectUrl} target="_blank" rel="noopener noreferrer"
+              <a href={getPrimaryProjectUrl(project.projectUrl) || project.projectUrl} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
                 style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.08)", textDecoration: "none" }}
                 onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
@@ -854,7 +855,7 @@ function ProjectCard({
 
           {/* Link button */}
           {project.projectUrl && (
-            <a href={project.projectUrl} target="_blank" rel="noopener noreferrer"
+            <a href={getPrimaryProjectUrl(project.projectUrl) || project.projectUrl} target="_blank" rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
               className="w-6 h-6 flex items-center justify-center rounded-md transition-colors"
               style={{ color: "rgba(255,255,255,0.2)", textDecoration: "none" }}

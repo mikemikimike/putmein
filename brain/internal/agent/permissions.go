@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -14,11 +15,15 @@ import (
 // When false: each tool call emits a permission request and waits.
 // When true: tools run immediately without asking.
 var (
-	autonomousMu    sync.RWMutex
-	autonomousMode         = false
-	deploymentsPath        = ""
-	savedApiKeys           = make(map[string]string)
-	securityChecksEnabled  = true
+	autonomousMu          sync.RWMutex
+	autonomousMode        = false
+	deploymentsPath       = ""
+	savedApiKeys          = make(map[string]string)
+	securityChecksEnabled = true
+	routingMode           = "" // "port" | "domain" (auto-detected if empty)
+	domainProvider        = "sslip" // "sslip" | "custom"
+	customRootDomain      = "" // e.g. "example.com"
+	executionMode         = "plan" // "plan" (Plan first then Action) | "action" (Direct Action)
 )
 
 // settingsPath returns the path to the persistent settings file.
@@ -50,6 +55,10 @@ type persistedSettings struct {
 	DeploymentsPath       string            `json:"deploymentsPath,omitempty"`
 	ApiKeys               map[string]string `json:"apiKeys,omitempty"`
 	SecurityChecksEnabled *bool             `json:"securityChecksEnabled,omitempty"`
+	RoutingMode           string            `json:"routingMode,omitempty"`
+	DomainProvider        string            `json:"domainProvider,omitempty"`
+	CustomRootDomain      string            `json:"customRootDomain,omitempty"`
+	ExecutionMode         string            `json:"executionMode,omitempty"`
 }
 
 // DefaultDeploymentsDir returns the default OS-dependent common deployment location.
@@ -76,6 +85,18 @@ func loadSettings() {
 		deploymentsPath = s.DeploymentsPath
 		if s.SecurityChecksEnabled != nil {
 			securityChecksEnabled = *s.SecurityChecksEnabled
+		}
+		if s.RoutingMode != "" {
+			routingMode = s.RoutingMode
+		}
+		if s.DomainProvider != "" {
+			domainProvider = s.DomainProvider
+		}
+		if s.CustomRootDomain != "" {
+			customRootDomain = s.CustomRootDomain
+		}
+		if s.ExecutionMode != "" {
+			executionMode = s.ExecutionMode
 		}
 		if s.ApiKeys != nil {
 			savedApiKeys = make(map[string]string)
@@ -107,6 +128,10 @@ func saveSettings() {
 		DeploymentsPath:       deploymentsPath,
 		ApiKeys:               savedApiKeys,
 		SecurityChecksEnabled: &securityChecksEnabled,
+		RoutingMode:           routingMode,
+		DomainProvider:        domainProvider,
+		CustomRootDomain:      customRootDomain,
+		ExecutionMode:         executionMode,
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
@@ -252,3 +277,120 @@ type PermissionResponse struct {
 	// AlwaysAllow permanently enables autonomous mode for this session.
 	AlwaysAllow bool `json:"alwaysAllow"`
 }
+
+// GetRoutingMode returns the configured routing mode ("port" | "domain"),
+// or defaults to "port" if not yet configured.
+func GetRoutingMode() string {
+	autonomousMu.RLock()
+	defer autonomousMu.RUnlock()
+	if routingMode == "" {
+		return "port"
+	}
+	return routingMode
+}
+
+// SetRoutingMode updates the routing mode ("port" | "domain") and persists the change.
+func SetRoutingMode(mode string) {
+	autonomousMu.Lock()
+	defer autonomousMu.Unlock()
+	routingMode = strings.ToLower(strings.TrimSpace(mode))
+	saveSettings()
+}
+
+// GetDomainProvider returns the configured domain provider ("sslip" | "custom"),
+// default is "sslip".
+func GetDomainProvider() string {
+	autonomousMu.RLock()
+	defer autonomousMu.RUnlock()
+	if domainProvider == "" {
+		return "sslip"
+	}
+	return domainProvider
+}
+
+// SetDomainProvider updates the domain provider and persists the change.
+func SetDomainProvider(provider string) {
+	autonomousMu.Lock()
+	defer autonomousMu.Unlock()
+	domainProvider = strings.ToLower(strings.TrimSpace(provider))
+	saveSettings()
+}
+
+// GetCustomRootDomain returns the user-configured custom root domain (e.g. "example.com").
+func GetCustomRootDomain() string {
+	autonomousMu.RLock()
+	defer autonomousMu.RUnlock()
+	return customRootDomain
+}
+
+// SetCustomRootDomain updates the custom root domain and persists the change.
+func SetCustomRootDomain(rootDomain string) {
+	autonomousMu.Lock()
+	defer autonomousMu.Unlock()
+	customRootDomain = strings.ToLower(strings.TrimSpace(rootDomain))
+	saveSettings()
+}
+
+// GetExecutionMode returns the configured execution mode ("plan" | "action"), default is "plan".
+func GetExecutionMode() string {
+	autonomousMu.RLock()
+	defer autonomousMu.RUnlock()
+	if executionMode == "" {
+		return "plan"
+	}
+	return executionMode
+}
+
+// SetExecutionMode updates the execution mode ("plan" | "action") and persists the change.
+func SetExecutionMode(mode string) {
+	autonomousMu.Lock()
+	defer autonomousMu.Unlock()
+	m := strings.ToLower(strings.TrimSpace(mode))
+	if m == "action" {
+		executionMode = "action"
+	} else {
+		executionMode = "plan"
+	}
+	saveSettings()
+}
+
+var dangerousExecPatterns = []*regexp.Regexp{
+	// File / directory deletion (rm, rmdir, unlink, shred, wipe)
+	regexp.MustCompile(`(?i)(^|[\s;&|])(rm(\s+-[a-zA-Z0-9_-]*|\s+)|rmdir\b|unlink\b|shred\b|wipe\b)`),
+	// Raw disk / format
+	regexp.MustCompile(`(?i)\b(mkfs(\.[a-z0-9]+)?|fdisk|parted|dd\s+if=)\b`),
+	// Sensitive system directory writes/destructive access
+	regexp.MustCompile(`(?i)(^|[\s;&|])(/etc|/sys|/proc|/boot|/dev|/usr/bin|/usr/sbin|/var/run|/root|~?/\.ssh)(\b|/)`),
+	// Database destructive queries
+	regexp.MustCompile(`(?i)\b(drop\s+(database|schema|table|user)|truncate\s+table|alter\s+table\s+.*\bdrop\b|dropdb|prisma\s+migrate\s+reset)\b`),
+	// Dangerous power / system commands
+	regexp.MustCompile(`(?i)\b(shutdown|reboot|poweroff|init\s+0|kill\s+-9\s+1)\b`),
+	// Destructive git
+	regexp.MustCompile(`(?i)\b(git\s+reset\s+--hard|git\s+clean\s+-[a-zA-Z]*f|git\s+push\s+.*--force)\b`),
+	// Destructive docker
+	regexp.MustCompile(`(?i)\b(docker\s+rm\s+-[a-zA-Z]*f|docker\s+system\s+prune|docker\s+volume\s+rm)\b`),
+	// Remote script pipe to shell
+	regexp.MustCompile(`(?i)\b(curl|wget)\s+.*\|\s*(ba)?sh\b`),
+	// Bulk permission destruction
+	regexp.MustCompile(`(?i)\b(chmod|chown)\s+-R\s+.*\s+(/|/\*|~)\b`),
+}
+
+// RequiresApproval checks whether a tool invocation needs user confirmation
+// when Autonomous Mode is disabled. Only dangerous / destructive operations
+// require confirmation; ordinary development, inspection, and build tasks proceed immediately.
+func RequiresApproval(toolName, arg string) bool {
+	if toolName == "delete_file" {
+		return true
+	}
+	if toolName != "exec" {
+		return false
+	}
+	trimmed := strings.TrimSpace(arg)
+	for _, re := range dangerousExecPatterns {
+		if re.MatchString(trimmed) {
+			return true
+		}
+	}
+	return false
+}
+
