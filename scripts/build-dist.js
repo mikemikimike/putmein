@@ -53,6 +53,21 @@ function dereferenceAllSymlinks(dir) {
   }
 }
 
+function findFilesRecursive(dir, predicate, results = []) {
+  if (!fs.existsSync(dir)) return results;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (predicate(entry.name, fullPath, entry)) {
+      results.push(fullPath);
+    }
+    if (entry.isDirectory()) {
+      findFilesRecursive(fullPath, predicate, results);
+    }
+  }
+  return results;
+}
+
 async function main() {
   log("Starting PutmeIn full distribution build...");
 
@@ -177,7 +192,28 @@ async function main() {
     process.exit(1);
   }
 
-  copyDirRecursive(standaloneSource, distRay);
+  // Next.js standalone outputs into .next/standalone/ray when monorepo/turbopack tracing is configured,
+  // or flat in .next/standalone otherwise. Detect the actual app folder.
+  const nestedRayDir = path.join(standaloneSource, "ray");
+  const hasNestedRay = fs.existsSync(path.join(nestedRayDir, "server.js"));
+  const actualSource = hasNestedRay ? nestedRayDir : standaloneSource;
+
+  log(`Staging standalone application from ${path.relative(ROOT_DIR, actualSource)} directly into dist/ray...`);
+  copyDirRecursive(actualSource, distRay);
+
+  // If there's an outer node_modules in standalone (e.g. hoisted dependencies), copy it into dist/ray/node_modules
+  const outerNodeModules = path.join(standaloneSource, "node_modules");
+  if (hasNestedRay && fs.existsSync(outerNodeModules)) {
+    log("Staging hoisted node_modules from .next/standalone/node_modules...");
+    copyDirRecursive(outerNodeModules, path.join(distRay, "node_modules"));
+  }
+
+  // Defensive cleanup: Ensure no stray nested dist/ray/ray directory was created
+  const strayNestedRay = path.join(distRay, "ray");
+  if (fs.existsSync(strayNestedRay)) {
+    log("Cleaning accidental nested dist/ray/ray directory...");
+    fs.rmSync(strayNestedRay, { recursive: true, force: true });
+  }
 
   // Ensure full @prisma and .prisma runtime directories are staged in both node_modules and .next/node_modules
   const sourcePrisma = path.join(RAY_DIR, "node_modules", "@prisma");
@@ -251,10 +287,10 @@ async function main() {
   const os = require('os');
   if (!process.env.DATABASE_URL) {
     const candidates = [
-      path.join(os.homedir(), '.putmein', '.env'),
       path.join(__dirname, '..', '..', 'ray', '.env'),
       path.join(__dirname, '..', '..', '.env'),
       path.join(process.cwd(), '.env'),
+      path.join(os.homedir(), '.putmein', '.env'),
     ];
     for (const p of candidates) {
       try {
@@ -329,15 +365,48 @@ async function main() {
     }
   }
 
-  // Safety Assertion: ensure zero .env files anywhere in dist
-  try {
-    const envMatches = execSync('find dist -name "*.env*" 2>/dev/null', { encoding: "utf-8" }).trim();
-    if (envMatches) {
-      error("CRITICAL SECURITY ERROR: .env files found in dist directory:\n" + envMatches);
-      process.exit(1);
-    }
-  } catch (_) {}
+  // Purge any stray .env files anywhere across dist/
+  const strayEnvFiles = findFilesRecursive(DIST_DIR, (name) => name.startsWith(".env"));
+  for (const ef of strayEnvFiles) {
+    log(`Removing forbidden env file: ${path.relative(ROOT_DIR, ef)}`);
+    fs.rmSync(ef, { force: true });
+  }
 
+  // Safety Assertion: ensure zero .env files anywhere in dist (cross-platform)
+  const remainingEnvFiles = findFilesRecursive(DIST_DIR, (name) => name.startsWith(".env"));
+  if (remainingEnvFiles.length > 0) {
+    error("CRITICAL SECURITY ERROR: .env files found in dist directory:\n" + remainingEnvFiles.join("\n"));
+    process.exit(1);
+  }
+
+  // 7. Post-build Verification Assertions
+  log("Validating production distribution integrity...");
+  if (!fs.existsSync(distServerJs)) {
+    error("POST-BUILD VALIDATION FAILED: dist/ray/server.js does not exist!");
+    process.exit(1);
+  }
+
+  if (fs.existsSync(path.join(distRay, "ray"))) {
+    error("POST-BUILD VALIDATION FAILED: Nested dist/ray/ray directory exists!");
+    process.exit(1);
+  }
+
+  if (!fs.existsSync(path.join(distRay, ".next", "static"))) {
+    error("POST-BUILD VALIDATION FAILED: dist/ray/.next/static does not exist!");
+    process.exit(1);
+  }
+
+  if (fs.existsSync(path.join(distRay, "src"))) {
+    error("POST-BUILD VALIDATION FAILED: dist/ray/src source directory was not sanitized!");
+    process.exit(1);
+  }
+
+  if (fs.existsSync(path.join(distRay, "app"))) {
+    error("POST-BUILD VALIDATION FAILED: dist/ray/app source directory was not sanitized!");
+    process.exit(1);
+  }
+
+  success("Post-build validation passed: dist/ray/server.js and assets are staged cleanly!");
   success("Sanitization complete: zero .env files or raw source code in dist!");
   success("Ray Next.js standalone assets staged cleanly in dist/ray!");
   success("Full PutmeIn distribution build completed successfully!");

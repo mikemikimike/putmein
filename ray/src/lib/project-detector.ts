@@ -310,9 +310,9 @@ export function detectProjectStack(
 
         // 1. Next.js check
         if (
-          fs.existsSync(path.join(projectPath, "next.config.js")) ||
-          fs.existsSync(path.join(projectPath, "next.config.ts")) ||
-          fs.existsSync(path.join(projectPath, "next.config.mjs"))
+          fs.existsSync(/*turbopackIgnore: true*/ path.join(projectPath, "next.config.js")) ||
+          fs.existsSync(/*turbopackIgnore: true*/ path.join(projectPath, "next.config.ts")) ||
+          fs.existsSync(/*turbopackIgnore: true*/ path.join(projectPath, "next.config.mjs"))
         ) {
           framework = "Next.js";
           frameworkSlug = "nextjs";

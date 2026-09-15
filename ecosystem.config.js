@@ -7,9 +7,9 @@ const crypto = require("crypto");
 let userEnv = {};
 
 const envCandidates = [
-  path.join(os.homedir(), ".putmein", ".env"),
   path.join(__dirname, "ray", ".env"),
   path.join(__dirname, ".env"),
+  path.join(os.homedir(), ".putmein", ".env"),
   path.join(__dirname, "..", ".env"),
 ];
 
@@ -90,11 +90,11 @@ module.exports = {
       max_restarts: 10,
       restart_delay: 2000,
       env: {
+        ...userEnv,
         BRAIN_PORT: brainPort,
         RAY_URL: `http://localhost:${rayPort}`,
         BRAIN_INTERNAL_SECRET: brainSecret,
         AGENT_AUTONOMOUS: userEnv.AGENT_AUTONOMOUS || "false",
-        ...userEnv,
       },
     },
     {
@@ -105,12 +105,12 @@ module.exports = {
       max_restarts: 10,
       restart_delay: 2000,
       env: {
+        ...userEnv,
         PORT: rayPort,
         NODE_ENV: "production",
         BRAIN_URL: `http://localhost:${brainPort}`,
         NEXT_PUBLIC_BRAIN_URL: `http://localhost:${brainPort}`,
         BRAIN_INTERNAL_SECRET: brainSecret,
-        ...userEnv,
       },
     },
   ],

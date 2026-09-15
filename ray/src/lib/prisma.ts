@@ -17,8 +17,8 @@ function loadEnvIfMissing(): void {
 
   for (const envPath of candidatePaths) {
     try {
-      if (fs.existsSync(envPath)) {
-        const content = fs.readFileSync(envPath, "utf-8");
+      if (fs.existsSync(/*turbopackIgnore: true*/ envPath)) {
+        const content = fs.readFileSync(/*turbopackIgnore: true*/ envPath, "utf-8");
         for (const line of content.split("\n")) {
           const trimmed = line.trim();
           if (trimmed.startsWith("DATABASE_URL=") && !trimmed.startsWith("#")) {
