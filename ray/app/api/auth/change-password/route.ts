@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 import { verifyToken } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { changePasswordRateLimiter } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -18,6 +19,17 @@ export async function POST(req: NextRequest) {
     const payload = await verifyToken(token);
     if (!payload) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userLimit = changePasswordRateLimiter.check(`change-pwd:${payload.userId}`);
+    if (!userLimit.allowed) {
+      return NextResponse.json(
+        { error: `Too many failed password change attempts. Please try again in ${userLimit.resetInSeconds} seconds.` },
+        {
+          status: 429,
+          headers: { "Retry-After": String(userLimit.resetInSeconds) },
+        }
+      );
     }
 
     const body = await req.json();
@@ -64,11 +76,14 @@ export async function POST(req: NextRequest) {
     // Verify current password against stored bcrypt hash
     const isCurrentValid = await bcrypt.compare(currentPassword, user.password);
     if (!isCurrentValid) {
+      changePasswordRateLimiter.consume(`change-pwd:${payload.userId}`);
       return NextResponse.json(
         { error: "Current password is incorrect" },
         { status: 400 }
       );
     }
+
+    changePasswordRateLimiter.reset(`change-pwd:${payload.userId}`);
 
     // Hash the new password with bcrypt (salt rounds = 12)
     const hashedNewPassword = await bcrypt.hash(newPassword, 12);

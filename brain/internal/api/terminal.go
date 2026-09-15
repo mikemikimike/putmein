@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -50,6 +51,24 @@ func resolveDefaultRoot() string {
 	return "/"
 }
 
+var validContainerRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
+
+func isValidContainerTarget(target string) bool {
+	return validContainerRegex.MatchString(target)
+}
+
+func sanitizeCwd(cwd string) string {
+	targetCwd := strings.TrimSpace(cwd)
+	if targetCwd == "" {
+		return resolveDefaultRoot()
+	}
+	cleaned := filepath.Clean(targetCwd)
+	if info, err := os.Stat(cleaned); err == nil && info.IsDir() {
+		return cleaned
+	}
+	return resolveDefaultRoot()
+}
+
 func getSystemUserAndHost() (string, string) {
 	sysUser := "user"
 	if u, err := user.Current(); err == nil && u.Username != "" {
@@ -79,10 +98,12 @@ func terminalExecHandler(w http.ResponseWriter, r *http.Request) {
 	trimmedCmd := strings.TrimSpace(req.Command)
 	sysUser, sysHost := getSystemUserAndHost()
 
-	targetCwd := strings.TrimSpace(req.Cwd)
-	if targetCwd == "" {
-		targetCwd = resolveDefaultRoot()
+	if req.ContainerID != "" && !isValidContainerTarget(strings.TrimSpace(req.ContainerID)) {
+		http.Error(w, "invalid container identifier", http.StatusBadRequest)
+		return
 	}
+
+	targetCwd := sanitizeCwd(req.Cwd)
 
 	// If empty command, just return current prompt context
 	if trimmedCmd == "" {
@@ -202,10 +223,12 @@ func terminalStreamHandler(w http.ResponseWriter, r *http.Request) {
 	trimmedCmd := strings.TrimSpace(req.Command)
 	sysUser, sysHost := getSystemUserAndHost()
 
-	targetCwd := strings.TrimSpace(req.Cwd)
-	if targetCwd == "" {
-		targetCwd = resolveDefaultRoot()
+	if req.ContainerID != "" && !isValidContainerTarget(strings.TrimSpace(req.ContainerID)) {
+		http.Error(w, "invalid container identifier", http.StatusBadRequest)
+		return
 	}
+
+	targetCwd := sanitizeCwd(req.Cwd)
 
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-transform")

@@ -110,8 +110,14 @@ func main() {
 	// Build the HTTP router
 	router := api.NewRouter()
 
+	host := os.Getenv("BRAIN_HOST")
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	bindAddr := host + ":" + port
+
 	srv := &http.Server{
-		Addr:              ":" + port,
+		Addr:              bindAddr,
 		Handler:           router,
 		ReadHeaderTimeout: 30 * time.Second,
 		IdleTimeout:       120 * time.Second,
@@ -119,7 +125,7 @@ func main() {
 
 	// Start server in background
 	go func() {
-		fmt.Printf("\n  ⬡  brain  running on http://localhost:%s\n\n", port)
+		fmt.Printf("\n  ⬡  brain  running on http://%s\n\n", bindAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("brain: server error: %v", err)
 		}

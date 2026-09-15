@@ -19,7 +19,10 @@ export async function POST(req: NextRequest) {
 
     const res = await fetch(`${BRAIN_URL}/v1/terminal/exec`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "",
+      },
       body: JSON.stringify(body),
     });
 

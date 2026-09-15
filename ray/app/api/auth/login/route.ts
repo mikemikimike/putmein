@@ -3,9 +3,24 @@ import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { signToken } from "@/lib/auth";
 import { formatDatabaseErrorResponse } from "@/lib/db-errors";
+import { getClientIp, authRateLimiter } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   try {
+    const clientIp = getClientIp(request);
+
+    // Guard: Check rate limit for client IP
+    const ipCheck = authRateLimiter.check(`ip:${clientIp}`);
+    if (!ipCheck.allowed) {
+      return NextResponse.json(
+        { error: `Too many failed login attempts from this IP. Please try again in ${ipCheck.resetInSeconds} seconds.` },
+        {
+          status: 429,
+          headers: { "Retry-After": String(ipCheck.resetInSeconds) },
+        }
+      );
+    }
+
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json(
@@ -33,6 +48,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Guard: Check rate limit for target account
+    const emailCheck = authRateLimiter.check(`email:${cleanEmail}`);
+    if (!emailCheck.allowed) {
+      return NextResponse.json(
+        { error: `Too many failed login attempts for this account. Please try again in ${emailCheck.resetInSeconds} seconds.` },
+        {
+          status: 429,
+          headers: { "Retry-After": String(emailCheck.resetInSeconds) },
+        }
+      );
+    }
+
     if (!password || typeof password !== "string") {
       return NextResponse.json(
         { error: "Password is required" },
@@ -46,6 +73,8 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
+      authRateLimiter.consume(`ip:${clientIp}`);
+      authRateLimiter.consume(`email:${cleanEmail}`);
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }
@@ -55,11 +84,17 @@ export async function POST(request: NextRequest) {
     // Verify password
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
+      authRateLimiter.consume(`ip:${clientIp}`);
+      authRateLimiter.consume(`email:${cleanEmail}`);
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }
       );
     }
+
+    // Reset rate limiter on successful login
+    authRateLimiter.reset(`ip:${clientIp}`);
+    authRateLimiter.reset(`email:${cleanEmail}`);
 
     // Sign JWT
     const token = await signToken({

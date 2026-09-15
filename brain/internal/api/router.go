@@ -2,17 +2,56 @@ package api
 
 import (
 	"net/http"
+	"os"
 	"strings"
 )
 
-// corsMiddleware adds permissive CORS headers so ray (localhost:3000) can call brain (localhost:3100).
+// isAllowedOrigin checks if the request origin matches the allowlist of trusted PutmeIn/Ray frontends.
+func isAllowedOrigin(origin string) bool {
+	if origin == "" {
+		return false
+	}
+
+	// Always permit local Ray UI origins
+	if origin == "http://localhost:3000" || origin == "http://127.0.0.1:3000" {
+		return true
+	}
+
+	// Permit origin configured in RAY_URL
+	if rayURL := strings.TrimRight(os.Getenv("RAY_URL"), "/"); rayURL != "" && origin == rayURL {
+		return true
+	}
+
+	// Permit any extra origins listed in BRAIN_ALLOWED_ORIGINS (comma-separated)
+	if extra := os.Getenv("BRAIN_ALLOWED_ORIGINS"); extra != "" {
+		for _, o := range strings.Split(extra, ",") {
+			if strings.TrimSpace(o) == origin {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// corsMiddleware applies restrictive CORS policies, allowing only trusted PutmeIn origins.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		origin := r.Header.Get("Origin")
+
+		if origin != "" && isAllowedOrigin(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-brain-secret, x-internal-secret")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Vary", "Origin")
+		}
 
 		if r.Method == http.MethodOptions {
+			if origin != "" && !isAllowedOrigin(origin) {
+				http.Error(w, "CORS origin not allowed", http.StatusForbidden)
+				return
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -107,9 +146,9 @@ func NewRouter() http.Handler {
 		}
 	})
 
-	// Terminal routes (interactive host and container execution)
-	mux.HandleFunc("/v1/terminal/exec", terminalExecHandler)
-	mux.HandleFunc("/v1/terminal/stream", terminalStreamHandler)
+	// Terminal routes (interactive host and container execution) - requires internal secret auth
+	mux.HandleFunc("/v1/terminal/exec", requireInternalSecret(terminalExecHandler))
+	mux.HandleFunc("/v1/terminal/stream", requireInternalSecret(terminalStreamHandler))
 
 	return corsMiddleware(mux)
 }

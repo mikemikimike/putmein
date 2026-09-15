@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { signToken } from "@/lib/auth";
 import { formatDatabaseErrorResponse } from "@/lib/db-errors";
+import { getClientIp, setupRateLimiter } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -10,11 +11,21 @@ export const runtime = "nodejs";
 // POST /api/auth/setup — Initial First-Time Administrator Onboarding
 export async function POST(request: NextRequest) {
   try {
-    // 1. Guard: check if an admin account with a password already exists
+    const clientIp = getClientIp(request);
+    const limit = setupRateLimiter.consume(`setup:${clientIp}`);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: `Too many setup attempts. Please try again in ${limit.resetInSeconds} seconds.` },
+        {
+          status: 429,
+          headers: { "Retry-After": String(limit.resetInSeconds) },
+        }
+      );
+    }
+    // 1. Guard: check if an admin account already exists
     const existingAdmin = await prisma.user.findFirst({
       where: {
         role: "ADMIN",
-        password: { not: "" },
       },
       select: { id: true },
     });
@@ -78,31 +89,28 @@ export async function POST(request: NextRequest) {
     const hashedPassword = await bcrypt.hash(password, 12);
     const cleanName = name.trim();
 
-    // 4. Create or update the admin record
+    // 4. Ensure no user exists with this email before creating admin
     const existingUser = await prisma.user.findUnique({
       where: { email: cleanEmail },
+      select: { id: true },
     });
 
-    let adminUser;
     if (existingUser) {
-      adminUser = await prisma.user.update({
-        where: { id: existingUser.id },
-        data: {
-          name: cleanName,
-          password: hashedPassword,
-          role: "ADMIN",
-        },
-      });
-    } else {
-      adminUser = await prisma.user.create({
-        data: {
-          name: cleanName,
-          email: cleanEmail,
-          password: hashedPassword,
-          role: "ADMIN",
-        },
-      });
+      return NextResponse.json(
+        { error: "An account with this email address already exists. Please sign in." },
+        { status: 409 }
+      );
     }
+
+    // 5. Create the initial administrator record
+    const adminUser = await prisma.user.create({
+      data: {
+        name: cleanName,
+        email: cleanEmail,
+        password: hashedPassword,
+        role: "ADMIN",
+      },
+    });
 
     // 5. Sign authentication JWT
     const token = await signToken({
