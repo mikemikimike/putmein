@@ -29,6 +29,9 @@ var (
 // settingsPath returns the path to the persistent settings file.
 // Prioritizes ~/.config/putmein/settings.json across all platforms.
 func settingsPath() string {
+	if custom := strings.TrimSpace(os.Getenv("PUTMEIN_CONFIG_PATH")); custom != "" {
+		return custom
+	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
 		p := filepath.Join(home, ".config", "putmein", "settings.json")
 		if _, err := os.Stat(p); err == nil {
@@ -74,11 +77,20 @@ func DefaultDeploymentsDir() string {
 
 // loadSettings reads autonomous mode, deploymentsPath and apiKeys from disk. Called once on package init.
 func loadSettings() {
-	data, err := os.ReadFile(settingsPath())
+	path := settingsPath()
+	data, err := os.ReadFile(path)
 	if err != nil {
 		// File may not exist yet, that's fine, default is false
 		return
 	}
+
+	autonomousMu.Lock()
+	defer autonomousMu.Unlock()
+
+	// Enforce restricted permissions on existing directory and settings file
+	_ = os.Chmod(filepath.Dir(path), 0o700)
+	_ = os.Chmod(path, 0o600)
+
 	var s persistedSettings
 	if json.Unmarshal(data, &s) == nil {
 		autonomousMode = s.AutonomousMode
@@ -98,20 +110,33 @@ func loadSettings() {
 		if s.ExecutionMode != "" {
 			executionMode = s.ExecutionMode
 		}
+		needsMigration := false
 		if s.ApiKeys != nil {
 			savedApiKeys = make(map[string]string)
 			for k, v := range s.ApiKeys {
 				trimmed := strings.TrimSpace(v)
 				if trimmed != "" {
-					savedApiKeys[k] = trimmed
-					ai.SetRuntimeAPIKey(k, trimmed)
+					if !strings.HasPrefix(trimmed, encryptionPrefix) {
+						needsMigration = true
+					}
+					decrypted, err := decryptSecret(trimmed)
+					if err != nil {
+						// Skip unreadable/corrupted key gracefully
+						continue
+					}
+					savedApiKeys[k] = decrypted
+					ai.SetRuntimeAPIKey(k, decrypted)
 					if k == "ozias" {
-						ai.SetRuntimeAPIKey("minimax", trimmed)
+						ai.SetRuntimeAPIKey("minimax", decrypted)
 					} else if k == "minimax" {
-						ai.SetRuntimeAPIKey("ozias", trimmed)
+						ai.SetRuntimeAPIKey("ozias", decrypted)
 					}
 				}
 			}
+		}
+		// If any legacy plaintext keys were found, migrate them immediately to encrypted format on disk
+		if needsMigration {
+			saveSettings()
 		}
 	}
 }
@@ -119,14 +144,32 @@ func loadSettings() {
 // saveSettings writes the current state to disk. Called after every change.
 func saveSettings() {
 	path := settingsPath()
-	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	// Ensure directory exists with strict 0700 permissions
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return
 	}
+	_ = os.Chmod(dir, 0o700)
+
+	// Encrypt all API keys for storage at rest
+	encryptedKeys := make(map[string]string, len(savedApiKeys))
+	for k, v := range savedApiKeys {
+		trimmed := strings.TrimSpace(v)
+		if trimmed != "" {
+			enc, err := encryptSecret(trimmed)
+			if err != nil {
+				// Fallback to storing raw if encryption encounters an unexpected error
+				encryptedKeys[k] = trimmed
+			} else {
+				encryptedKeys[k] = enc
+			}
+		}
+	}
+
 	s := persistedSettings{
 		AutonomousMode:        autonomousMode,
 		DeploymentsPath:       deploymentsPath,
-		ApiKeys:               savedApiKeys,
+		ApiKeys:               encryptedKeys,
 		SecurityChecksEnabled: &securityChecksEnabled,
 		RoutingMode:           routingMode,
 		DomainProvider:        domainProvider,
@@ -137,7 +180,8 @@ func saveSettings() {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(path, data, 0o644)
+	_ = os.WriteFile(path, data, 0o600)
+	_ = os.Chmod(path, 0o600)
 }
 
 func init() {

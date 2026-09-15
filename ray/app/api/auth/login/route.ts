@@ -6,19 +6,43 @@ import { formatDatabaseErrorResponse } from "@/lib/db-errors";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json(
+        { error: "Invalid request payload" },
+        { status: 400 }
+      );
+    }
+
     const { email, password } = body;
 
-    if (!email || !password) {
+    // Strict validation before touching database
+    if (!email || typeof email !== "string" || !email.trim()) {
       return NextResponse.json(
-        { error: "Email and password are required" },
+        { error: "Email is required" },
+        { status: 400 }
+      );
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      return NextResponse.json(
+        { error: "Please enter a valid email address" },
+        { status: 400 }
+      );
+    }
+
+    if (!password || typeof password !== "string") {
+      return NextResponse.json(
+        { error: "Password is required" },
         { status: 400 }
       );
     }
 
     // Find user in the shared users table
     const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase().trim() },
+      where: { email: cleanEmail },
     });
 
     if (!user) {

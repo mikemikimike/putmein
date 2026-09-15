@@ -16,7 +16,7 @@ function getJwtSecret(): Uint8Array {
 // Routes that require dashboard authentication
 const PROTECTED_ROUTES = ["/chat", "/dashboard", "/settings", "/servers", "/projects", "/monitor", "/deployments", "/containers", "/cicd", "/github"];
 // Routes that should redirect to /chat if already authenticated
-const AUTH_ROUTES = ["/login", "/register", "/setup"];
+const AUTH_ROUTES = ["/login", "/setup"];
 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
@@ -37,6 +37,11 @@ export async function proxy(request: NextRequest) {
   const isDashboard = isDashboardHost(hostHeader);
 
   if (isDashboard) {
+    // Redirect decommissioned register page to login
+    if (pathname === "/register" || pathname.startsWith("/register/")) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+
     const token = request.cookies.get("ray_token")?.value;
 
     const isProtected = PROTECTED_ROUTES.some((route) =>
@@ -62,7 +67,7 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    // Redirect authenticated users away from login/register
+    // Redirect authenticated users away from login/setup
     if (isAuthRoute && isAuthenticated) {
       return NextResponse.redirect(new URL("/chat", request.url));
     }
