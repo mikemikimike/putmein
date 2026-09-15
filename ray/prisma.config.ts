@@ -5,7 +5,7 @@ import path from "path";
 const config = {
   schema: path.join(__dirname, "prisma/schema.prisma"),
   datasource: {
-    url: process.env.DATABASE_URL || "mysql://root:GMXWFEH7Efk0C3FPLZWQDT50UWLM2DX42yH0zqQj782YdU2XxuJigdLuGRiecCUY@37.60.237.239:3306/putmein",
+    url: process.env.DATABASE_URL,
   },
 };
 
