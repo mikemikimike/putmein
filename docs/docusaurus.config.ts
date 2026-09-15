@@ -85,6 +85,10 @@ const config: Config = {
               to: '/settings',
             },
             {
+              label: 'Developer Guide',
+              to: '/developer',
+            },
+            {
               label: 'Troubleshooting',
               to: '/troubleshooting',
             },

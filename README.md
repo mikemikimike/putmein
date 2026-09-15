@@ -77,6 +77,7 @@ PutmeIn will start as a resilient background daemon via PM2 and display your loc
 ## Useful Links
 - [Website](https://putme.in)
 - [Documentation](https://docs.putme.in)
+- [Developer Guide](https://docs.putme.in/developer)
 - [Discord](https://discord.gg/XX9qWbaTHQ)
 
 ## CLI Usage & Commands
@@ -113,10 +114,10 @@ npm start
 ```
 ---
 
-## Contibuting
+## Contributing
 If you found a bug, please create an issue with the title "Bug: " and a detailed description.
 
-If you want to contribute to PutmeIn, please fork the repository and create a pull request.
+If you want to contribute to PutmeIn, check out our [Developer Guide](https://docs.putme.in/developer) for prerequisites and local setup instructions. Please fork the repository and create a pull request.
 
 ### Project Structure
 
