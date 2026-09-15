@@ -1,1 +1,0 @@
-landing/public/install.sh
