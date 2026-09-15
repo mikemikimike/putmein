@@ -12,10 +12,6 @@ export default function Cta() {
             Stop Managing Servers. <br className="hidden md:block" /> Start Building.
           </h2>
 
-          <p className="text-lg md:text-xl text-zinc-400 max-w-2xl mb-10 font-light drop-shadow-md">
-            Join the waitlist today and secure a <span className="text-white font-medium">50% lifetime discount</span> on your Digital SRE Agent. Limited spots available for the early access beta.
-          </p>
-
           {/* <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto mt-auto">
             <a href="/waitlist" className="inline-flex w-full sm:w-auto items-center justify-center gap-2 px-8 py-4 text-lg font-semibold text-black bg-white rounded-xl shadow-[0_0_20px_rgba(255,255,255,0.3)] transition-all hover:bg-zinc-200 hover:scale-105 hover:shadow-[0_0_30px_rgba(255,255,255,0.5)]">
               Get Early Access Now

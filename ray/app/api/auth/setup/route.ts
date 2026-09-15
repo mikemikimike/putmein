@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { signToken } from "@/lib/auth";
+import { formatDatabaseErrorResponse } from "@/lib/db-errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -135,11 +136,17 @@ export async function POST(request: NextRequest) {
     });
 
     return response;
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("POST /api/auth/setup error:", error);
+    const errorInfo = formatDatabaseErrorResponse(error);
     return NextResponse.json(
-      { error: error?.message || "An unexpected error occurred during setup." },
-      { status: 500 }
+      {
+        error: errorInfo.userMessage,
+        isDbInitError: errorInfo.isDbInitError,
+        command: errorInfo.command,
+        hint: errorInfo.hint,
+      },
+      { status: errorInfo.isDbInitError ? 503 : 500 }
     );
   }
 }

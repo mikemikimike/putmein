@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { formatDatabaseErrorResponse } from "@/lib/db-errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -22,15 +23,21 @@ export async function GET() {
     return NextResponse.json({
       setupRequired,
     });
-  } catch (error: any) {
-    console.error("GET /api/auth/setup-status error:", error?.message || error);
-    // If database is not ready or error occurs, report setupRequired false with error details
+  } catch (error: unknown) {
+    const err = error as Error | undefined;
+    console.error("GET /api/auth/setup-status error:", err?.message || error);
+    const errorInfo = formatDatabaseErrorResponse(error);
+
     return NextResponse.json(
       {
         setupRequired: false,
-        error: error?.message || "Failed to check setup status",
+        isDbInitError: errorInfo.isDbInitError,
+        error: errorInfo.userMessage,
+        command: errorInfo.command,
+        hint: errorInfo.hint,
       },
-      { status: 500 }
+      { status: errorInfo.isDbInitError ? 503 : 500 }
     );
   }
 }
+

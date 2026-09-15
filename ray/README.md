@@ -16,6 +16,22 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Production Build & Standalone Server
+
+Ray is configured with Next.js `output: "standalone"` for self-contained, lightweight production deployments.
+
+1. **Build the application**:
+   ```bash
+   npm run build
+   ```
+   This generates the traced standalone server bundle in `.next/standalone` and copies required static assets via `postbuild`.
+
+2. **Start the production server**:
+   ```bash
+   npm start
+   ```
+   This runs the standalone server directly (`node .next/standalone/server.js`) without requiring the Next.js CLI runtime in production.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

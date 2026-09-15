@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { signToken } from "@/lib/auth";
+import { formatDatabaseErrorResponse } from "@/lib/db-errors";
 
 export async function POST(request: NextRequest) {
   try {
@@ -67,12 +68,31 @@ export async function POST(request: NextRequest) {
     });
 
     return response;
-  } catch (error: any) {
-    console.error("Login route error:", error?.message || error);
-    if (error?.stack) console.error(error.stack);
-    if (error?.cause) console.error("Error cause:", error.cause);
+  } catch (error: unknown) {
+    const err = error as Error | undefined;
+    console.error("Login route error:", err?.message || error);
+    if (err?.stack) console.error(err.stack);
+    if (err?.cause) console.error("Error cause:", err.cause);
+
+    const errorInfo = formatDatabaseErrorResponse(error);
+    if (errorInfo.isDbInitError) {
+      return NextResponse.json(
+        {
+          error: errorInfo.userMessage,
+          isDbInitError: true,
+          command: errorInfo.command,
+          hint: errorInfo.hint,
+          code: errorInfo.code,
+        },
+        { status: 503 }
+      );
+    }
+
     return NextResponse.json(
-      { error: error?.message || "An unexpected error occurred. Please try again." },
+      {
+        error: errorInfo.userMessage,
+        isDbInitError: false,
+      },
       { status: 500 }
     );
   }
