@@ -744,7 +744,8 @@ func SaveDeploymentViaRayAPI(res *DeployResult, req DeployRequest) {
 	}
 	secret := os.Getenv("BRAIN_INTERNAL_SECRET")
 	if secret == "" {
-		secret = "brain-ray-internal-putmein-2024"
+		fmt.Printf("[deploy] BRAIN_INTERNAL_SECRET not set, cannot save deployment via Ray API\n")
+		return
 	}
 
 	payload, err := json.Marshal(map[string]any{

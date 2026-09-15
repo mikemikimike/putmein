@@ -1,6 +1,7 @@
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
+const crypto = require("crypto");
 
 // Load configuration from all possible env locations in priority order
 let userEnv = {};
@@ -75,7 +76,7 @@ const rayCwd = path.dirname(rayScript);
 
 const rayPort = process.env.RAY_PORT || userEnv.RAY_PORT || "4567";
 const brainPort = process.env.BRAIN_PORT || userEnv.BRAIN_PORT || "4500";
-const brainSecret = process.env.BRAIN_INTERNAL_SECRET || userEnv.BRAIN_INTERNAL_SECRET || "brain-ray-internal-putmein-2024";
+const brainSecret = process.env.BRAIN_INTERNAL_SECRET || userEnv.BRAIN_INTERNAL_SECRET || ("putmein-sec-" + crypto.randomBytes(16).toString("hex"));
 
 module.exports = {
   apps: [

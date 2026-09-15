@@ -317,7 +317,7 @@ func runDetectedTool(ctx context.Context, text, toolName, arg, userID, githubTok
 		}
 		secret := os.Getenv("BRAIN_INTERNAL_SECRET")
 		if secret == "" {
-			secret = "brain-ray-internal-putmein-2024"
+			return "Error: BRAIN_INTERNAL_SECRET is not configured in environment"
 		}
 		payload, _ := json.Marshal(map[string]any{
 			"id":         projectNameOrID,
