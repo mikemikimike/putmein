@@ -3,9 +3,15 @@ import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { isDashboardHost } from "@/lib/network";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "fallback-secret-for-dev-only"
-);
+function getJwtSecret(): Uint8Array {
+  const secret = process.env.JWT_SECRET?.trim();
+  if (!secret) {
+    throw new Error(
+      "JWT_SECRET environment variable is missing. Please define JWT_SECRET in your .env file."
+    );
+  }
+  return new TextEncoder().encode(secret);
+}
 
 // Routes that require dashboard authentication
 const PROTECTED_ROUTES = ["/chat", "/dashboard", "/settings", "/servers", "/projects", "/monitor", "/deployments", "/containers", "/cicd", "/github"];
@@ -42,7 +48,7 @@ export async function proxy(request: NextRequest) {
     let isAuthenticated = false;
     if (token) {
       try {
-        await jwtVerify(token, JWT_SECRET);
+        await jwtVerify(token, getJwtSecret());
         isAuthenticated = true;
       } catch {
         isAuthenticated = false;
