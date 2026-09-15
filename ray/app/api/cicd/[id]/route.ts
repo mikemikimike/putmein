@@ -4,7 +4,7 @@ import { verifyToken } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { detectProjectStack, detectContainerStack } from "@/lib/project-detector";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 // GET /api/cicd/[id] — get pipeline with all runs & stack metadata
 export async function GET(

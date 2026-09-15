@@ -4,7 +4,7 @@ import { normalizeDomain, parseProjectDomains } from "@/lib/domains";
 
 export const runtime = "nodejs";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 // Fast in-memory cache for resolved domain upstreams
 interface CachedResolution {

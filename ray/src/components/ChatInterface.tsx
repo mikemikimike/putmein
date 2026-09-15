@@ -853,7 +853,7 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-const BRAIN_URL = process.env.NEXT_PUBLIC_BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.NEXT_PUBLIC_BRAIN_URL || "http://localhost:4500";
 
 /* ── Approval card ───────────────────────────────── */
 function ApprovalCard({

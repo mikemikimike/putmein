@@ -5,7 +5,7 @@ import prisma from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 export async function POST(
   req: NextRequest,
@@ -53,7 +53,7 @@ export async function POST(
             branch: run.pipeline.branch || "main",
             projectPath: `/deployments/${run.pipeline.name}`,
             containerName: `ray-${run.pipeline.name.toLowerCase()}`,
-            hostPort: run.pipeline.port && run.pipeline.port !== 3000 && run.pipeline.port !== 3100 ? run.pipeline.port : null,
+            hostPort: run.pipeline.port && run.pipeline.port !== 4567 && run.pipeline.port !== 4500 ? run.pipeline.port : null,
             status: "building",
           },
         });
@@ -81,7 +81,7 @@ export async function POST(
             branch: pipe.branch || "main",
             projectPath: `/deployments/${pipe.name}`,
             containerName: `ray-${pipe.name.toLowerCase()}`,
-            hostPort: pipe.port && pipe.port !== 3000 && pipe.port !== 3100 ? pipe.port : null,
+            hostPort: pipe.port && pipe.port !== 4567 && pipe.port !== 4500 ? pipe.port : null,
             status: "building",
           },
         });
@@ -166,7 +166,7 @@ export async function POST(
             repoUrl: deployment.repoUrl,
             branch: deployment.branch,
             envVars: envs,
-            hostPort: deployment.hostPort && deployment.hostPort !== 3000 && deployment.hostPort !== 3100 ? deployment.hostPort : undefined,
+            hostPort: deployment.hostPort && deployment.hostPort !== 4567 && deployment.hostPort !== 4500 ? deployment.hostPort : undefined,
           }),
         });
 

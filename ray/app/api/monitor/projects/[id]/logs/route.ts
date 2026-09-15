@@ -4,7 +4,7 @@ import { verifyToken } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import fs from "fs/promises";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 // Read tail of file locally as fallback
 async function readLocalFileTail(path: string, linesCount: number): Promise<string> {

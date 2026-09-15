@@ -11,7 +11,7 @@ const execFileAsync = promisify(execFile);
 
 export const runtime = "nodejs";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 // POST /api/cicd/poll — checks remote GitHub repos for new commits asynchronously without blocking
 export async function POST(req: NextRequest) {

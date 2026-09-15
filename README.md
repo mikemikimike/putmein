@@ -70,6 +70,8 @@ PutmeIn will start as a resilient background daemon via PM2 and display your loc
 * **Web Dashboard (Ray):** [http://localhost:4567](http://localhost:4567)
 * **API Engine (Brain):** [http://localhost:4500](http://localhost:4500)
 
+> **Note:** If you are running Putmein directly from the source code. The development ports are 3000 for Ray and 3100 for Brain.
+
 ---
 
 ## Useful Links
@@ -93,20 +95,6 @@ PutmeIn exposes the `ray` command globally:
 | `ray cohen` | Launches the interactive terminal TUI client. |
 | `ray --help` | Displays help menu and command list. |
 | `ray --version` | Prints current installed version. |
-
----
-
-## Configuration
-
-PutmeIn reads runtime configurations from `~/.putmein/.env` or environment variables:
-
-| Variable | Default | Description |
-|---|---|---|
-| `RAY_PORT` | `4567` | Port for the Ray web dashboard. |
-| `BRAIN_PORT` | `4500` | Port for the Brain AI backend engine. |
-| `DATABASE_URL` | — | MySQL / MariaDB connection string. |
-| `BRAIN_INTERNAL_SECRET` | auto-generated | Secret token for secure Brain <-> Ray communication. |
-| `AGENT_AUTONOMOUS` | `false` | Enable or disable autonomous DevOps action mode. |
 
 ---
 

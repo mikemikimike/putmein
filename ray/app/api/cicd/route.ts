@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
     }
 
     let allocatedPort = Number(port);
-    if (!allocatedPort || allocatedPort === 3000 || allocatedPort === 3100) {
+    if (!allocatedPort || allocatedPort === 4567 || allocatedPort === 4500) {
       const { findGuaranteedFreePort } = await import("@/lib/port-manager");
       const freePortResult = await findGuaranteedFreePort(null, user.userId);
       allocatedPort = freePortResult.port;

@@ -7,7 +7,7 @@ import { detectProjectStack } from "@/lib/project-detector";
 import { findDomainConflict, getPrimaryProjectUrl } from "@/lib/domains";
 import { detectServerIp } from "@/lib/network";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 // GET /api/projects/[id] — project details with connected container, CI/CD, GitHub, and server IP
 export async function GET(

@@ -297,10 +297,10 @@ if (Test-DockerRunning) {
             if (Test-Path $candidate) { $sqlScriptPath = $candidate }
         }
         if ($sqlScriptPath -and (Test-Path $sqlScriptPath)) {
-            Write-Color "  Initializing database schema and default admin..." Cyan
+            Write-Color "  Initializing database schema..." Cyan
             Get-Content $sqlScriptPath | docker exec -i putmein-mysql mysql -uroot -p"$dbPassword" putmein 2>$null
             & docker exec -i putmein-mysql mysql -uroot -p"$dbPassword" -e "ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY '$dbPassword'; FLUSH PRIVILEGES;" 2>$null
-            Write-Success "Database schema verified and admin user ready!"
+            Write-Success "Database schema verified and ready for initial setup!"
         }
     } catch {}
 }
@@ -352,9 +352,8 @@ Write-BoxLine "Web Dashboard (Ray):    http://localhost:4567"
 Write-BoxLine "Network Dashboard:      http://127.0.0.1:4567"
 Write-BoxLine "AI Backend (Brain):     http://localhost:4500"
 Write-BoxLine ""
-Write-BoxLine "Default Admin Login:"
-Write-BoxLine "  * Email:    admin@putme.in" -color Yellow
-Write-BoxLine "  * Password: admin123" -color Yellow
+Write-BoxLine "First-Time Setup:"
+Write-BoxLine "  * Open Web Dashboard to configure your admin account" -color Yellow
 Write-BoxLine ""
 Write-BoxLine "Useful CLI Commands:"
 Write-BoxLine "  * ray status         Inspect service health and memory" -color Yellow

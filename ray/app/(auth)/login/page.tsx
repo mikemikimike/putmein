@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 
@@ -9,6 +9,21 @@ export default function LoginPage() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    async function checkSetup() {
+      try {
+        const res = await fetch("/api/auth/setup-status");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.setupRequired) {
+            router.replace("/setup");
+          }
+        }
+      } catch {}
+    }
+    checkSetup();
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -7,7 +7,7 @@ import os from "os";
 
 export const runtime = "nodejs";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 // GET /api/settings — returns current agent, routing, and deployment settings
 export async function GET(req: NextRequest) {

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Icon } from "@iconify/react";
 
-const BRAIN_URL = process.env.NEXT_PUBLIC_BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.NEXT_PUBLIC_BRAIN_URL || "http://localhost:4500";
 
 export default function SettingsPage() {
   const [activeView, setActiveView] = useState<"general" | "keys">("general");

@@ -8,7 +8,7 @@ import { getDeploymentsDir } from "@/lib/settings";
 
 export const runtime = "nodejs";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 export async function POST(req: NextRequest) {
   try {

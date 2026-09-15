@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { verifyToken } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 // PATCH /api/monitor/projects/[id] — update project (enable/disable, rename, change interval, log command)
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {

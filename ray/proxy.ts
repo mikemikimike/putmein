@@ -16,7 +16,7 @@ function getJwtSecret(): Uint8Array {
 // Routes that require dashboard authentication
 const PROTECTED_ROUTES = ["/chat", "/dashboard", "/settings", "/servers", "/projects", "/monitor", "/deployments", "/containers", "/cicd", "/github"];
 // Routes that should redirect to /chat if already authenticated
-const AUTH_ROUTES = ["/login", "/register"];
+const AUTH_ROUTES = ["/login", "/register", "/setup"];
 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;

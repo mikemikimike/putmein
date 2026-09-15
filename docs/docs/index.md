@@ -101,6 +101,8 @@ Once started, PutmeIn automatically spins up both core services daemonized under
 | `Ray Web Console` | `http://localhost:4567` | Telemetry, log streams, system diagnostics, and process management. |
 | `Brain Engine API` | `http://localhost:4500` | Background AI daemon and Docker container orchestrator. |
 
+> **Note:** If you are running Putmein directly from the source code. The development ports are 3000 for Ray and 3100 for Brain.
+
 ```bash
 # Start background daemon services
 ray start

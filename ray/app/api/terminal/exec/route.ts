@@ -4,7 +4,7 @@ import { verifyToken } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 // POST /api/terminal/exec — proxy command execution to Brain
 export async function POST(req: NextRequest) {

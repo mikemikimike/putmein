@@ -16,26 +16,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Find user in the shared users table
-    let user = await prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase().trim() },
     });
-
-    // Auto-seed default admin if logging in with admin credentials and account does not exist
-    if (!user && email.toLowerCase().trim() === "admin@putme.in" && password === "admin123") {
-      try {
-        const hashedPassword = await bcrypt.hash("admin123", 10);
-        user = await prisma.user.create({
-          data: {
-            name: "Admin",
-            email: "admin@putme.in",
-            password: hashedPassword,
-            role: "ADMIN",
-          },
-        });
-      } catch (seedErr) {
-        console.error("Auto-seeding default admin error:", seedErr);
-      }
-    }
 
     if (!user) {
       return NextResponse.json(

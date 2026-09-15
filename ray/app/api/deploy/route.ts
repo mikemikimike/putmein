@@ -6,7 +6,7 @@ import prisma from "@/lib/prisma";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 // GET /api/deploy — list user's deployments
 export async function GET() {
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
         repoUrl,
         branch,
         envVars,
-        hostPort: body.hostPort && body.hostPort !== 3000 && body.hostPort !== 3100 ? body.hostPort : undefined,
+        hostPort: body.hostPort && body.hostPort !== 4567 && body.hostPort !== 4500 ? body.hostPort : undefined,
       }),
     });
 

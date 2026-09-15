@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 // GET /api/security/rules — retrieves active security checklist rules and known CVE registry
 export async function GET() {

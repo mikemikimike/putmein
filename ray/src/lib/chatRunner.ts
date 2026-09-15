@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 export interface ToolBlock {
   id: string;

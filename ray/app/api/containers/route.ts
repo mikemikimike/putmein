@@ -5,7 +5,7 @@ import prisma from "@/lib/prisma";
 import { detectContainerStack } from "@/lib/project-detector";
 import { getPrimaryProjectUrl } from "@/lib/domains";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 // GET /api/containers — list all Docker containers with framework & stack visuals
 export async function GET(req: NextRequest) {

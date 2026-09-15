@@ -2,7 +2,7 @@ import os from "os";
 import path from "path";
 import fs from "fs";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 /**
  * Returns the default OS-dependent deployments directory.

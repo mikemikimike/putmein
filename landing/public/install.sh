@@ -623,11 +623,8 @@ CREATE TABLE IF NOT EXISTS `ray_pipeline_runs` (
   CONSTRAINT `ray_pipeline_runs_pipelineId_fkey` FOREIGN KEY (`pipelineId`) REFERENCES `ray_pipelines` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-INSERT INTO `users` (`id`, `email`, `password`, `name`, `role`, `createdAt`, `updatedAt`)
-SELECT 'cm_admin_default_01', 'admin@putme.in', '$2b$10$KehRdOpONjPGoTrnoUO/BemB5neS8js8teKaUo1QkoeNd0NZpA6pe', 'Admin', 'ADMIN', NOW(3), NOW(3)
-WHERE NOT EXISTS (SELECT 1 FROM `users` WHERE `email` = 'admin@putme.in');
 EOSQL
-success "Database schema verified and admin user ready!"
+success "Database schema verified and ready for initial setup!"
 
 # ==============================================================================
 # Step 6: Install PutmeIn Global CLI & Launch PM2 Daemon
@@ -732,9 +729,8 @@ print_box_line "${BOLD}Web Dashboard (Ray):${NC}    ${CYAN}http://localhost:${RA
 print_box_line "${BOLD}Network Dashboard:${NC}      ${CYAN}http://${LAN_IP}:${RAY_PORT}${NC}"
 print_box_line "${BOLD}AI Backend (Brain):${NC}     ${DIM}http://localhost:${BRAIN_PORT}${NC}"
 print_box_line ""
-print_box_line "${BOLD}Default Admin Login:${NC}"
-print_box_line "  * Email:    ${YELLOW}admin@putme.in${NC}"
-print_box_line "  * Password: ${YELLOW}admin123${NC}"
+print_box_line "${BOLD}First-Time Setup:${NC}"
+print_box_line "  * Open Web Dashboard to configure your admin account"
 print_box_line ""
 print_box_line "${BOLD}Useful CLI Commands:${NC}"
 print_box_line "  * ${YELLOW}ray status${NC}         Inspect service health and memory"

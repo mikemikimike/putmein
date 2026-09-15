@@ -188,7 +188,7 @@ export default function DeploymentsPage() {
           <div className="mt-3 flex items-center gap-2 flex-wrap">
             <span className="text-[11px] font-mono text-white/40 mr-1">Active Bindings:</span>
             {portRegistry.claimed
-              .filter((c) => c.type === "dashboard_project" || c.type === "docker" || c.type === "deployment" || (c.type === "reserved" && (c.port === 3000 || c.port === 3100)))
+              .filter((c) => c.type === "dashboard_project" || c.type === "docker" || c.type === "deployment" || (c.type === "reserved" && (c.port === 4567 || c.port === 4500)))
               .slice(0, 8)
               .map((c) => (
                 <div

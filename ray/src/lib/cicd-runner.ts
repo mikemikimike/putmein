@@ -7,7 +7,7 @@ import { getDeploymentsDir } from "@/lib/settings";
 import { getEffectiveGitHubToken } from "@/lib/github-app";
 
 const execFileAsync = promisify(execFile);
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 export interface PipelineRunOptions {
   pipelineId: string;
@@ -290,7 +290,7 @@ export async function executePipelineRun(options: PipelineRunOptions) {
         sourceType: "github",
         repoUrl: cleanRepoUrl,
         branch,
-        hostPort: pipeline.port && pipeline.port !== 3000 && pipeline.port !== 3100 ? pipeline.port : undefined,
+        hostPort: pipeline.port && pipeline.port !== 4567 && pipeline.port !== 4500 ? pipeline.port : undefined,
       };
 
       const bRes = await fetch(`${BRAIN_URL}/v1/deploy`, {

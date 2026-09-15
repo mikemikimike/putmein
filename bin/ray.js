@@ -92,9 +92,8 @@ function printBanner(rayPort = 4567, brainPort = 4500) {
   printBoxLine(`${C.bold}Network Dashboard:${C.reset}      ${C.cyan}http://${lanIp}:${rayPort}${C.reset}`);
   printBoxLine(`${C.bold}AI Backend (Brain):${C.reset}     ${C.dim}http://localhost:${brainPort}${C.reset}`);
   printBoxLine("");
-  printBoxLine(`${C.bold}Default Admin Login:${C.reset}`);
-  printBoxLine(`  * Email:    ${C.yellow}admin@putme.in${C.reset}`);
-  printBoxLine(`  * Password: ${C.yellow}admin123${C.reset}`);
+  printBoxLine(`${C.bold}First-Time Setup:${C.reset}`);
+  printBoxLine(`  * Open Web Dashboard to configure your admin account`);
   printBoxLine("");
   printBoxLine(`${C.bold}Useful CLI Commands:${C.reset}`);
   printBoxLine(`  * ${C.yellow}ray status${C.reset}        Inspect service health and memory`);
