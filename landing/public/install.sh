@@ -379,11 +379,13 @@ elif docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^${MYSQL_CONTAINE
   docker start "$MYSQL_CONTAINER" >/dev/null
   success "MySQL container started"
 else
-  # Generate a secure 32-character random root password
+  # Generate a secure 32-character random root password and 64-character JWT secret
   if command -v openssl &>/dev/null; then
     DB_PASSWORD=$(openssl rand -hex 16)
+    JWT_SECRET=$(openssl rand -hex 32)
   else
     DB_PASSWORD=$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom 2>/dev/null | head -c 32 || date +%s)
+    JWT_SECRET=$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom 2>/dev/null | head -c 64 || date +%s%N)
   fi
 
   info "Creating dedicated MySQL container on port $MYSQL_PORT..."
@@ -400,6 +402,7 @@ else
   cat > "$PUTMEIN_ENV_FILE" << EOF
 # PutmeIn Local Environment
 DATABASE_URL="mysql://root:${DB_PASSWORD}@127.0.0.1:${MYSQL_PORT}/putmein?allowPublicKeyRetrieval=true"
+JWT_SECRET="${JWT_SECRET}"
 RAY_PORT=4567
 BRAIN_PORT=4500
 RAY_URL="http://localhost:4567"
@@ -431,6 +434,19 @@ if [ -f "$PUTMEIN_ENV_FILE" ]; then
   fi
   if ! grep -q "allowPublicKeyRetrieval" "$PUTMEIN_ENV_FILE"; then
     sed -i.bak -E 's/(DATABASE_URL="mysql:\/\/[^"?]+)(\?.*)?"/\1\?allowPublicKeyRetrieval=true"/' "$PUTMEIN_ENV_FILE" 2>/dev/null || true
+  fi
+  # Ensure secure JWT_SECRET exists in existing env file
+  if ! grep -q "^JWT_SECRET=" "$PUTMEIN_ENV_FILE" || grep -q "putmein-jwt-secret-default-key-2024" "$PUTMEIN_ENV_FILE"; then
+    if command -v openssl &>/dev/null; then
+      NEW_JWT_SECRET=$(openssl rand -hex 32)
+    else
+      NEW_JWT_SECRET=$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom 2>/dev/null | head -c 64 || date +%s%N)
+    fi
+    if grep -q "^JWT_SECRET=" "$PUTMEIN_ENV_FILE"; then
+      sed -i.bak -E "s/^JWT_SECRET=.*/JWT_SECRET=\"${NEW_JWT_SECRET}\"/" "$PUTMEIN_ENV_FILE" 2>/dev/null || true
+    else
+      echo "JWT_SECRET=\"${NEW_JWT_SECRET}\"" >> "$PUTMEIN_ENV_FILE"
+    fi
   fi
 fi
 

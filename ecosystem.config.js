@@ -39,9 +39,44 @@ if (!userEnv.DATABASE_URL.includes("allowPublicKeyRetrieval")) {
   userEnv.DATABASE_URL += (userEnv.DATABASE_URL.includes("?") ? "&" : "?") + "allowPublicKeyRetrieval=true";
 }
 
-// Ensure JWT_SECRET is never undefined
-if (!userEnv.JWT_SECRET) {
-  userEnv.JWT_SECRET = process.env.JWT_SECRET || "putmein-jwt-secret-default-key-2024";
+// Ensure JWT_SECRET is cryptographically secure and never undefined or using weak defaults
+const INSECURE_JWT_DEFAULTS = [
+  "putmein-jwt-secret-default-key-2024",
+  "fallback-secret-for-dev-only",
+  "secret",
+  "test",
+  "dev",
+  "123456",
+  "password",
+  "default",
+];
+
+const activeJwtSecret = (userEnv.JWT_SECRET || process.env.JWT_SECRET || "").trim();
+if (!activeJwtSecret || INSECURE_JWT_DEFAULTS.includes(activeJwtSecret)) {
+  const generatedSecret = crypto.randomBytes(32).toString("hex");
+  userEnv.JWT_SECRET = generatedSecret;
+  process.env.JWT_SECRET = generatedSecret;
+
+  // Persist to ~/.putmein/.env so sessions remain valid across restarts
+  try {
+    const globalConfigDir = path.join(os.homedir(), ".putmein");
+    const globalEnvFile = path.join(globalConfigDir, ".env");
+    if (!fs.existsSync(globalConfigDir)) {
+      fs.mkdirSync(globalConfigDir, { recursive: true });
+    }
+    let existingEnv = "";
+    if (fs.existsSync(globalEnvFile)) {
+      existingEnv = fs.readFileSync(globalEnvFile, "utf-8");
+    }
+    if (/^JWT_SECRET=/m.test(existingEnv)) {
+      existingEnv = existingEnv.replace(/^JWT_SECRET=.*$/m, `JWT_SECRET="${generatedSecret}"`);
+    } else {
+      existingEnv = existingEnv.trim() ? `${existingEnv.trim()}\nJWT_SECRET="${generatedSecret}"\n` : `JWT_SECRET="${generatedSecret}"\n`;
+    }
+    fs.writeFileSync(globalEnvFile, existingEnv, { mode: 0o600 });
+  } catch (_) {
+    // Non-fatal if environment is read-only; in-memory secret will still secure the session
+  }
 }
 
 // Resolve paths for Brain binary

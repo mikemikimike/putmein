@@ -2,12 +2,29 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { isDashboardHost } from "@/lib/network";
+import { isTokenRevoked } from "@/lib/auth";
+
+const INSECURE_JWT_DEFAULTS = [
+  "putmein-jwt-secret-default-key-2024",
+  "fallback-secret-for-dev-only",
+  "secret",
+  "test",
+  "dev",
+  "123456",
+  "password",
+  "default",
+];
 
 function getJwtSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET?.trim();
   if (!secret) {
     throw new Error(
       "JWT_SECRET environment variable is missing. Please define JWT_SECRET in your .env file."
+    );
+  }
+  if (INSECURE_JWT_DEFAULTS.includes(secret)) {
+    throw new Error(
+      "JWT_SECRET is set to an insecure or well-known default key. Please generate a strong random 256-bit secret in your .env file."
     );
   }
   return new TextEncoder().encode(secret);
@@ -53,8 +70,12 @@ export async function proxy(request: NextRequest) {
     let isAuthenticated = false;
     if (token) {
       try {
-        await jwtVerify(token, getJwtSecret());
-        isAuthenticated = true;
+        const { payload } = await jwtVerify(token, getJwtSecret());
+        if (isTokenRevoked((payload.jti as string) || undefined, token)) {
+          isAuthenticated = false;
+        } else {
+          isAuthenticated = true;
+        }
       } catch {
         isAuthenticated = false;
       }

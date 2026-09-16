@@ -281,4 +281,22 @@ model RaySecurityScan {
   @@map("ray_security_scans")
 }
 
+// =============================================
+// REVOKED TOKENS TABLE (additive — never alters existing tables)
+// =============================================
+
+model RayRevokedToken {
+  id        String   @id @default(cuid())
+  jti       String?  @unique
+  tokenHash String?  @unique
+  userId    String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([jti])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@map("ray_revoked_tokens")
+}
+
 

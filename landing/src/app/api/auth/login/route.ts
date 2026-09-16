@@ -3,9 +3,26 @@ import { SignJWT } from 'jose';
 import bcrypt from 'bcryptjs'; // Changed from * as bcrypt
 import prisma from '@/lib/prisma';
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'fallback-secret-for-dev-only'
-);
+const INSECURE_JWT_DEFAULTS = [
+  'putmein-jwt-secret-default-key-2024',
+  'fallback-secret-for-dev-only',
+  'secret',
+  'test',
+  'dev',
+  '123456',
+  'password',
+  'default',
+];
+
+function getJwtSecret(): Uint8Array {
+  const secret = process.env.JWT_SECRET?.trim();
+  if (!secret || INSECURE_JWT_DEFAULTS.includes(secret)) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('JWT_SECRET is missing or using an insecure default key in production.');
+    }
+  }
+  return new TextEncoder().encode(secret || 'dev-only-local-secret-do-not-use-in-production');
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -50,7 +67,7 @@ export async function POST(request: NextRequest) {
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
       .setExpirationTime('24h')
-      .sign(JWT_SECRET);
+      .sign(getJwtSecret());
 
     const response = NextResponse.json({ 
       success: true,

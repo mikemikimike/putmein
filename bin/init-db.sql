@@ -180,3 +180,16 @@ CREATE TABLE IF NOT EXISTS `ray_pipeline_runs` (
   CONSTRAINT `ray_pipeline_runs_pipelineId_fkey` FOREIGN KEY (`pipelineId`) REFERENCES `ray_pipelines` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `ray_revoked_tokens` (
+  `id` VARCHAR(191) NOT NULL,
+  `jti` VARCHAR(191) NULL,
+  `tokenHash` VARCHAR(191) NULL,
+  `userId` VARCHAR(191) NULL,
+  `expiresAt` DATETIME(3) NOT NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `ray_revoked_tokens_jti_key`(`jti`),
+  UNIQUE INDEX `ray_revoked_tokens_tokenHash_key`(`tokenHash`),
+  INDEX `ray_revoked_tokens_expiresAt_idx`(`expiresAt`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+

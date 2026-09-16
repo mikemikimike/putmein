@@ -230,19 +230,43 @@ if (Test-DockerRunning) {
 
 # Create environment configuration if missing or update with safe URL
 if (!(Test-Path $envFile)) {
+    $jwtBytes = New-Object byte[] 32
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($jwtBytes)
+    $jwtSecret = [System.BitConverter]::ToString($jwtBytes).Replace("-", "").ToLower()
+
+    $brainSecretBytes = New-Object byte[] 16
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($brainSecretBytes)
+    $brainSecret = "putmein-sec-" + [System.BitConverter]::ToString($brainSecretBytes).Replace("-", "").ToLower()
+
     $envContent = @"
 # PutmeIn Local Environment
 DATABASE_URL="mysql://root:${dbPassword}@127.0.0.1:${mysqlPort}/putmein?allowPublicKeyRetrieval=true"
+JWT_SECRET="$jwtSecret"
 RAY_PORT=4567
 BRAIN_PORT=4500
 RAY_URL="http://localhost:4567"
 BRAIN_URL="http://localhost:4500"
 NEXT_PUBLIC_BRAIN_URL="http://localhost:4500"
-BRAIN_INTERNAL_SECRET="putmein-sec-2024"
+BRAIN_INTERNAL_SECRET="$brainSecret"
 AGENT_AUTONOMOUS="false"
 "@
     Set-Content -Path $envFile -Value $envContent
     Write-Success "Configuration saved to $envFile"
+} else {
+    # Ensure existing env file has a secure JWT_SECRET
+    $currentContent = Get-Content -Path $envFile -Raw
+    if ($currentContent -notmatch "JWT_SECRET=" -or $currentContent -match "putmein-jwt-secret-default-key-2024") {
+        $jwtBytes = New-Object byte[] 32
+        [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($jwtBytes)
+        $newJwtSecret = [System.BitConverter]::ToString($jwtBytes).Replace("-", "").ToLower()
+        if ($currentContent -match "JWT_SECRET=") {
+            $updatedContent = $currentContent -replace "JWT_SECRET=.*", "JWT_SECRET=`"$newJwtSecret`""
+        } else {
+            $updatedContent = $currentContent.TrimEnd() + "`r`nJWT_SECRET=`"$newJwtSecret`"`r`n"
+        }
+        Set-Content -Path $envFile -Value $updatedContent
+        Write-Success "Updated JWT_SECRET in $envFile"
+    }
 }
 
 # ==============================================================================

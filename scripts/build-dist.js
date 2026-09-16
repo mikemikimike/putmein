@@ -285,6 +285,7 @@ async function main() {
   const fs = require('fs');
   const path = require('path');
   const os = require('os');
+  const crypto = require('crypto');
   if (!process.env.DATABASE_URL) {
     const candidates = [
       path.join(__dirname, '..', '..', 'ray', '.env'),
@@ -317,8 +318,33 @@ async function main() {
       process.env.DATABASE_URL += (process.env.DATABASE_URL.includes("?") ? "&" : "?") + "allowPublicKeyRetrieval=true";
     }
   }
-  if (!process.env.JWT_SECRET) {
-    process.env.JWT_SECRET = "putmein-jwt-secret-default-key-2024";
+
+  const insecureJwtDefaults = [
+    'putmein-jwt-secret-default-key-2024',
+    'fallback-secret-for-dev-only',
+    'secret',
+    'test',
+    'dev',
+    '123456',
+    'password',
+    'default'
+  ];
+  const activeJwt = (process.env.JWT_SECRET || '').trim();
+  if (!activeJwt || insecureJwtDefaults.includes(activeJwt)) {
+    const generated = crypto.randomBytes(32).toString('hex');
+    process.env.JWT_SECRET = generated;
+    try {
+      const cfgDir = path.join(os.homedir(), '.putmein');
+      const cfgFile = path.join(cfgDir, '.env');
+      if (!fs.existsSync(cfgDir)) fs.mkdirSync(cfgDir, { recursive: true });
+      let cfgContent = fs.existsSync(cfgFile) ? fs.readFileSync(cfgFile, 'utf-8') : '';
+      if (/^JWT_SECRET=/m.test(cfgContent)) {
+        cfgContent = cfgContent.replace(/^JWT_SECRET=.*$/m, 'JWT_SECRET="' + generated + '"');
+      } else {
+        cfgContent = (cfgContent.trim() ? cfgContent.trim() + '\\n' : '') + 'JWT_SECRET="' + generated + '"\\n';
+      }
+      fs.writeFileSync(cfgFile, cfgContent, { mode: 0o600 });
+    } catch (_) {}
   }
 })();
 `;

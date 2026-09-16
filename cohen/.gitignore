@@ -1,0 +1,10 @@
+# Binaries & build artifacts
+bin/
+*.exe
+
+# Environment files
+.env
+.env*.local
+.env.*
+.env*
+!.env.example
