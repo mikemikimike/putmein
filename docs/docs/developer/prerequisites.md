@@ -18,6 +18,7 @@ Before developing or contributing to PutmeIn, ensure your workstation meets the 
 | **npm** | `>= 9.0.0` | Latest LTS | Standard package manager for monorepo dependency coordination. |
 | **Go** | `>= 1.22` | Go 1.22+ | Required for compiling the Brain AI daemon and Cohen TUI client. |
 | **Docker** | Latest stable | Docker Engine + Compose | Required for container management and local infrastructure orchestration. |
+| **MySQL / MariaDB** | MySQL 8.0+ / MariaDB 10.5+ | MySQL 8.0 (Docker) | Primary relational database for Ray and internal metrics storage. |
 | **Git** | `>= 2.30` | Latest | Version control and collaborative workflows. |
 
 :::tip Operating System Compatibility
@@ -61,6 +62,14 @@ PutmeIn monitors and orchestrates Docker containers autonomously:
   ```bash
   docker ps
   ```
+
+### 4. MySQL / MariaDB Database
+
+PutmeIn uses MySQL 8.0+ as its relational data store for session auth, server configurations, deployments, and metrics:
+
+* **Docker (Recommended):** Running MySQL via an official Docker container (`mysql:8.0`) is the fastest approach and isolates data into a named Docker volume.
+* **Native:** Alternatively, install MySQL locally via Homebrew (macOS) or APT/YUM (Linux).
+* See [**Local Database Setup**](/developer/setup#step-3-local-database-setup) for one-line startup commands and schema migration instructions.
 
 ---
 

@@ -3,12 +3,11 @@
   "version": "1.0.0",
   "description": "cohen TUI - Go/Charm edition. DevOps is not a joke. Powered by Ozias.",
   "scripts": {
-    "prebuild": "mkdir -p bin",
-    "build": "/opt/homebrew/bin/go build -o bin/cohen .",
-    "dev": "/opt/homebrew/bin/go run .",
-    "start": "npm run build && ./bin/cohen",
-    "tidy": "/opt/homebrew/bin/go mod tidy",
-    "vet": "/opt/homebrew/bin/go vet ./..."
+    "build": "go build -o bin/cohen .",
+    "dev": "go run .",
+    "start": "go run .",
+    "tidy": "go mod tidy",
+    "vet": "go vet ./..."
   },
   "keywords": [
     "cohen",
