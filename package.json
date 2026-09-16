@@ -16,7 +16,7 @@
   "scripts": {
     "build": "node scripts/build-dist.js",
     "build:ray": "cd ray && npx prisma generate && npm run build",
-    "build:brain": "cd brain && CGO_ENABLED=0 go build -o bin/brain .",
+    "build:brain": "node scripts/build-brain.js",
     "build:cohen": "cd cohen && go build -o bin/cohen .",
     "start": "node bin/ray.js start",
     "stop": "node bin/ray.js stop",
