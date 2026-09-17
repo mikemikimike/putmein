@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
@@ -11,12 +12,19 @@ export async function POST(req: NextRequest) {
   try {
     const secret = req.headers.get("x-brain-secret");
     const expected = process.env.BRAIN_INTERNAL_SECRET;
-    if (!expected || secret !== expected) {
+    const secretBuffer = secret ? Buffer.from(secret) : null;
+    const expectedBuffer = expected ? Buffer.from(expected) : null;
+    const validSecret =
+      secretBuffer &&
+      expectedBuffer &&
+      secretBuffer.length === expectedBuffer.length &&
+      timingSafeEqual(secretBuffer, expectedBuffer);
+    if (!validSecret) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const body = await req.json();
-    let {
+    const {
       id: depId,
       userId,
       projectId,
