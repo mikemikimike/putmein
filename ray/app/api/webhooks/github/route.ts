@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
       // Trigger build via brain /v1/deploy in background
       fetch(`${BRAIN_URL}/v1/deploy`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
         body: JSON.stringify({
           id: dep.id,
           userId: dep.userId,

@@ -19,7 +19,7 @@ export async function GET(
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { id } = await params;
-    const res = await fetch(`${BRAIN_URL}/v1/containers/${encodeURIComponent(id)}`, { signal: AbortSignal.timeout(8000) });
+    const res = await fetch(`${BRAIN_URL}/v1/containers/${encodeURIComponent(id)}`, { headers: { "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" }, signal: AbortSignal.timeout(8000) });
     if (!res.ok) {
       return NextResponse.json({ error: "Container not found" }, { status: res.status });
     }

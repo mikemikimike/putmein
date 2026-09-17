@@ -113,7 +113,7 @@ export async function POST(
       try {
         await fetch(`${BRAIN_URL}/v1/deploy/action`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
           body: JSON.stringify({ action: "stop", container: deployment.containerName }),
         });
       } catch { /* silent */ }
@@ -156,7 +156,7 @@ export async function POST(
 
         const bRes = await fetch(`${BRAIN_URL}/v1/deploy`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
           body: JSON.stringify({
             id: deployment.id,
             userId: user.userId,
@@ -293,7 +293,7 @@ export async function POST(
     if (deployment.containerName) {
       const res = await fetch(`${BRAIN_URL}/v1/deploy/action`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
         body: JSON.stringify({ action, container: deployment.containerName }),
       });
       if (!res.ok) {

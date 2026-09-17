@@ -295,7 +295,7 @@ export async function executePipelineRun(options: PipelineRunOptions) {
 
       const bRes = await fetch(`${BRAIN_URL}/v1/deploy`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
         body: JSON.stringify(deployPayload),
       });
 
