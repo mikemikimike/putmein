@@ -20,6 +20,7 @@ PutmeIn reads runtime variables across Ray (web console) and Brain (AI orchestra
 | `BRAIN_PORT` | `4500` | Port used by the Brain AI engine API (`3100` in dev). | Optional |
 | `BRAIN_INTERNAL_SECRET` | *auto-generated* | Cryptographic token for secure Ray ↔ Brain inter-service RPC. | Optional |
 | `AGENT_AUTONOMOUS` | `false` | Enable or disable autonomous DevOps action mode. | Optional |
+| `MAX_UPLOAD_SIZE_MB` | `500` | Maximum allowed deployment archive upload size in megabytes. Uploads exceeding this limit are rejected with HTTP 413. | Optional |
 
 ---
 

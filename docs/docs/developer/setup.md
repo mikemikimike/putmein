@@ -136,6 +136,7 @@ Key environment configurations:
 * `RAY_PORT`: Port for the Ray web console (default: `4567` for daemon, `3000` for dev).
 * `BRAIN_PORT`: Port for the Brain AI daemon (default: `4500` for daemon, `3100` for dev).
 * `BRAIN_INTERNAL_SECRET`: Shared secret for Ray ↔ Brain inter-service communication.
+* `MAX_UPLOAD_SIZE_MB`: Maximum archive size for deployment uploads in megabytes (default: `500`). Over-limit uploads are rejected with HTTP 413.
 
 ---
 
