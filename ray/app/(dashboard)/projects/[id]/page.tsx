@@ -193,14 +193,10 @@ export default function ProjectDetailPage({
 
   // Settings State: Environment Variables
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
-  const [rawEnv, setRawEnv] = useState("");
   const [loadingEnv, setLoadingEnv] = useState(false);
   const [newEnvKey, setNewEnvKey] = useState("");
   const [newEnvValue, setNewEnvValue] = useState("");
   const [addingEnv, setAddingEnv] = useState(false);
-  const [savingRawEnv, setSavingRawEnv] = useState(false);
-  const [rawEnvMode, setRawEnvMode] = useState(false);
-  const [unmaskedKeys, setUnmaskedKeys] = useState<Set<string>>(new Set());
   const [envActionMessage, setEnvActionMessage] = useState("");
 
   // Files Tab State
@@ -278,8 +274,7 @@ export default function ProjectDetailPage({
       const res = await fetch(`/api/projects/${id}/env`);
       if (res.ok) {
         const data = await res.json();
-        setEnvVars(data.variables || []);
-        setRawEnv(data.rawContent || "");
+        setEnvVars(data.vars || []);
       }
     } catch { /* silent */ }
     finally { setLoadingEnv(false); }
@@ -598,7 +593,9 @@ export default function ProjectDetailPage({
   const handleDeleteEnvVar = async (key: string) => {
     try {
       const res = await fetch(`/api/projects/${id}/env?key=${encodeURIComponent(key)}`, {
-        method: "DELETE",
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", key }),
       });
       if (res.ok) {
         setEnvActionMessage(`Deleted ${key} from .env`);
@@ -606,34 +603,6 @@ export default function ProjectDetailPage({
         fetchEnvVars();
       }
     } catch { /* silent */ }
-  };
-
-  // Save Raw .env file
-  const handleSaveRawEnv = async () => {
-    setSavingRawEnv(true);
-    setEnvActionMessage("");
-    try {
-      const res = await fetch(`/api/projects/${id}/env`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawContent: rawEnv }),
-      });
-      if (res.ok) {
-        setEnvActionMessage("Saved .env configuration");
-        setTimeout(() => setEnvActionMessage(""), 3000);
-        fetchEnvVars();
-      }
-    } catch { /* silent */ }
-    finally { setSavingRawEnv(false); }
-  };
-
-  const toggleMask = (key: string) => {
-    setUnmaskedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
   };
 
   // Save AI Memory Draft
@@ -1483,13 +1452,6 @@ export default function ProjectDetailPage({
                         Variables are automatically loaded from and saved directly into the project root <code className="text-white/80 font-mono">.env</code>.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setRawEnvMode(!rawEnvMode)}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white/[0.05] hover:bg-white/10 text-white/70 hover:text-white border border-white/[0.08] transition-all flex-shrink-0 cursor-pointer"
-                    >
-                      {rawEnvMode ? "Structured View" : "Raw .env Editor"}
-                    </button>
                   </div>
 
                   {envActionMessage && (
@@ -1498,32 +1460,7 @@ export default function ProjectDetailPage({
                     </div>
                   )}
 
-                  {rawEnvMode ? (
-                    /* Raw Editor Mode */
-                    <div className="space-y-3 mt-4">
-                      <textarea
-                        rows={10}
-                        value={rawEnv}
-                        onChange={(e) => setRawEnv(e.target.value)}
-                        placeholder="# Define your .env keys here&#10;PORT=4000&#10;DATABASE_URL=..."
-                        className="w-full bg-[#121212] border border-white/10 focus:border-white/25 focus:outline-none font-mono text-xs text-white p-3.5 leading-relaxed rounded-xl"
-                        style={{ resize: "vertical" }}
-                      />
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={handleSaveRawEnv}
-                          disabled={savingRawEnv}
-                          className="bg-white text-black font-bold text-xs px-4 py-2 rounded-xl hover:bg-white/90 active:scale-95 transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                        >
-                          {savingRawEnv && <SpinIcon size={12} />}
-                          <span>Save .env File</span>
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    /* Structured Key-Value Mode */
-                    <div className="space-y-4 mt-4">
+                  <div className="space-y-4 mt-4">
                       {/* Add Variable Form */}
                       <form onSubmit={handleAddEnvVar} className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 items-end p-4 rounded-xl bg-[#111111] border border-white/[0.06]">
                         <div className="sm:col-span-2">
@@ -1578,23 +1515,11 @@ export default function ProjectDetailPage({
                             </thead>
                             <tbody className="divide-y divide-white/[0.04]">
                               {envVars.map((v) => {
-                                const isUnmasked = unmaskedKeys.has(v.key);
                                 return (
                                   <tr key={v.key} className="hover:bg-white/[0.02] transition-colors">
                                     <td className="py-2.5 px-3.5 text-white font-semibold">{v.key}</td>
                                     <td className="py-2.5 px-3.5 text-white/60">
-                                      <div className="flex items-center gap-2">
-                                        <span className="truncate max-w-xs">
-                                          {isUnmasked ? v.value : "••••••••••••••••"}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => toggleMask(v.key)}
-                                          className="text-[10px] text-white/40 hover:text-white transition-colors cursor-pointer"
-                                        >
-                                          {isUnmasked ? "Hide" : "Show"}
-                                        </button>
-                                      </div>
+                                      <span className="truncate max-w-xs">{v.value}</span>
                                     </td>
                                     <td className="py-2.5 px-3.5 text-right">
                                       <button
@@ -1613,8 +1538,7 @@ export default function ProjectDetailPage({
                           </table>
                         </div>
                       )}
-                    </div>
-                  )}
+                  </div>
                 </div>
 
                 {/* 5. DANGER ZONE SECTION */}
