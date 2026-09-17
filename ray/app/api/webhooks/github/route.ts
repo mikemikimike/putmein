@@ -15,6 +15,15 @@ export async function POST(req: NextRequest) {
     const rawBody = await req.text();
     const signature = req.headers.get("x-hub-signature-256");
     const event = req.headers.get("x-github-event");
+    const allIntegrations = await prisma.rayGithubIntegration.findMany({
+      select: { webhookSecret: true },
+    });
+    if (!allIntegrations.some(({ webhookSecret }) =>
+      verifyGithubWebhookSignature(rawBody, signature, webhookSecret)
+    )) {
+      return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
+    }
+
     let payload: {
       repository?: { full_name?: string; clone_url?: string };
       ref?: string;
@@ -62,17 +71,6 @@ export async function POST(req: NextRequest) {
     ]);
 
     if (deployments.length === 0 && pipelines.length === 0) {
-      const integrations = await prisma.rayGithubIntegration.findMany({
-        select: { webhookSecret: true },
-      });
-      const signatureValid = integrations.some(({ webhookSecret }) =>
-        verifyGithubWebhookSignature(rawBody, signature, webhookSecret)
-      );
-
-      if (!signatureValid) {
-        return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
-      }
-
       return NextResponse.json({ message: "No matching deployment or pipeline registered for this repository" });
     }
 
