@@ -15,7 +15,6 @@ export async function POST(req: NextRequest) {
     const rawBody = await req.text();
     const signature = req.headers.get("x-hub-signature-256");
     const event = req.headers.get("x-github-event");
-
     let payload: {
       repository?: { full_name?: string; clone_url?: string };
       ref?: string;
