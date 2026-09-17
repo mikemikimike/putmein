@@ -115,13 +115,14 @@ export async function proxy(request: NextRequest) {
         forwardHeaders.set("x-target-upstream", data.upstream);
         forwardHeaders.set("x-target-path", `${pathname}${search}`);
         forwardHeaders.set("x-domain-requested", hostHeader);
+        forwardHeaders.set("x-domain-proxy-secret", process.env.BRAIN_INTERNAL_SECRET || "");
 
         return NextResponse.rewrite(new URL("/api/domain-proxy", request.url), {
           request: { headers: forwardHeaders },
         });
       }
     }
-  } catch (err) {
+  } catch {
     // resolution error or timeout
   }
 

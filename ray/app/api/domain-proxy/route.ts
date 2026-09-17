@@ -3,8 +3,30 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function getApprovedUpstream(rawUpstream: string | null): string | null {
+  if (!rawUpstream) return null;
+
+  try {
+    const upstream = new URL(rawUpstream);
+    if (upstream.protocol !== "http:" ||
+        upstream.hostname !== "127.0.0.1" ||
+        upstream.username || upstream.password || upstream.pathname !== "/" ||
+        upstream.search || upstream.hash || !upstream.port) {
+      return null;
+    }
+    return upstream.origin;
+  } catch {
+    return null;
+  }
+}
+
 async function handleProxy(req: NextRequest) {
-  const upstream = req.headers.get("x-target-upstream");
+  const expectedSecret = process.env.BRAIN_INTERNAL_SECRET?.trim();
+  if (!expectedSecret || req.headers.get("x-domain-proxy-secret") !== expectedSecret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const upstream = getApprovedUpstream(req.headers.get("x-target-upstream"));
   const targetPath = req.headers.get("x-target-path") || "/";
 
   if (!upstream) {
@@ -14,7 +36,7 @@ async function handleProxy(req: NextRequest) {
     );
   }
 
-  const targetUrl = `${upstream.replace(/\/+$/, "")}${targetPath.startsWith("/") ? targetPath : "/" + targetPath}`;
+  const targetUrl = `${upstream}${targetPath.startsWith("/") ? targetPath : "/" + targetPath}`;
 
   try {
     // Copy incoming headers, omitting hop-by-hop headers
@@ -62,14 +84,14 @@ async function handleProxy(req: NextRequest) {
       statusText: upstreamRes.statusText,
       headers: responseHeaders,
     });
-  } catch (err: any) {
+  } catch {
     return new NextResponse(
       `<html>
         <head><title>503 Service Unavailable</title></head>
         <body style="background:#0a0a0a;color:#fff;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
           <div style="text-align:center;padding:24px;border:1px solid #222;border-radius:12px;background:#111;max-width:480px;">
             <h2 style="margin:0 0 8px 0;font-size:18px;">503 Service Unavailable</h2>
-            <p style="color:#888;font-size:12px;margin:0 0 16px 0;">The application container is starting up or temporarily unreachable on ${upstream}.</p>
+            <p style="color:#888;font-size:12px;margin:0 0 16px 0;">The application container is starting up or temporarily unreachable.</p>
             <p style="color:#555;font-size:11px;margin:0;">Please check that your container is running in the dashboard.</p>
           </div>
         </body>
