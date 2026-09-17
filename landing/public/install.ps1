@@ -329,10 +329,6 @@ if (Test-DockerRunning) {
     } catch {}
 }
 
-# Reset PM2 daemon to guarantee clean process table
-try { pm2 delete all 2>$null | Out-Null } catch {}
-try { pm2 kill 2>$null | Out-Null } catch {}
-
 # Start services via ray CLI or node fallback
 Write-Color "  Starting PutmeIn services (Ray & Brain)..." Cyan
 $rayCmd = Get-Command ray -ErrorAction SilentlyContinue
