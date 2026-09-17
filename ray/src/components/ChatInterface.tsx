@@ -17,6 +17,7 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import ModelSelector, { MODELS } from "./ModelSelector";
 import { Icon } from "@iconify/react";
 import { StateSpinner } from "./StateSpinner";
+import { parseChatErrorLine } from "@/lib/chat-stream.mjs";
 
 /* ── Tool Block & Thinking Accordion ────────────── */
 export interface ToolBlock {
@@ -1347,19 +1348,8 @@ export default function ChatInterface({
           }
 
           // ── Vercel AI SDK error stream line: 3:"error message" ──
-          if (line.startsWith("3:")) {
-            try {
-              const parsed = JSON.parse(line.slice(2));
-              if (typeof parsed === "string") {
-                throw new Error(parsed);
-              }
-            } catch (parseErr) {
-              if (parseErr instanceof Error && !parseErr.message.includes("Unexpected token")) {
-                throw parseErr;
-              }
-              throw new Error(line.slice(2));
-            }
-          }
+          const streamError = parseChatErrorLine(line);
+          if (streamError) throw new Error(streamError);
 
           // ── Structured SSE event: data: {...} ──
           if (line.startsWith("data: ")) {
@@ -1566,9 +1556,18 @@ export default function ChatInterface({
         setIsLoading(false);
         setMessages((prev) => prev.map((m) => m.streaming ? { ...m, streaming: false } : m));
       }
-    } catch {
+    } catch (err: unknown) {
+      const isAbort = err instanceof Error && err.name === "AbortError";
+      const errorMessage = err instanceof Error ? err.message : "Error generating response";
       setIsLoading(false);
-      setMessages((prev) => prev.map((m) => m.streaming ? { ...m, streaming: false } : m));
+      setMessages((prev) => prev.map((m) => m.streaming
+        ? {
+            ...m,
+            errorMessage: isAbort ? undefined : errorMessage,
+            isRetryable: !isAbort,
+            streaming: false,
+          }
+        : m));
     }
   }, []);
 
@@ -2918,19 +2917,8 @@ CRITICAL INSTRUCTIONS FOR AI:
         }
 
         // ── Vercel AI SDK error stream line: 3:"error message" ──
-        if (line.startsWith("3:")) {
-          try {
-            const parsed = JSON.parse(line.slice(2));
-            if (typeof parsed === "string") {
-              throw new Error(parsed);
-            }
-          } catch (parseErr) {
-            if (parseErr instanceof Error && !parseErr.message.includes("Unexpected token")) {
-              throw parseErr;
-            }
-            throw new Error(line.slice(2));
-          }
-        }
+        const streamError = parseChatErrorLine(line);
+        if (streamError) throw new Error(streamError);
         return false;
       };
 

@@ -243,6 +243,7 @@ class ChatRunnerManager {
       const decoder = new TextDecoder();
       let rawBuffer = "";
       let hasStreamFinished = false;
+      let streamError: string | undefined;
 
       const processLine = (line: string) => {
         if (!line.trim()) return;
@@ -261,10 +262,14 @@ class ChatRunnerManager {
 
         // Error marker in AI SDK format (3:"...")
         if (line.startsWith("3:")) {
+          const payload = line.slice(2).trim();
           try {
-            const parsed = JSON.parse(line.slice(2));
-            if (typeof parsed === "string") run.error = parsed;
-          } catch {}
+            const parsed: unknown = JSON.parse(payload);
+            streamError = typeof parsed === "string" ? parsed : payload;
+          } catch {
+            streamError = payload || "Error generating response";
+          }
+          run.error = streamError;
           hasStreamFinished = true;
           return;
         }
@@ -345,6 +350,16 @@ class ChatRunnerManager {
 
       if (rawBuffer.trim()) {
         processLine(rawBuffer);
+      }
+
+      // A Brain error frame is terminal. Do not turn an errored run into a
+      // successful completion by appending a finish marker after it.
+      if (streamError) {
+        run.status = "error";
+        run.completedAt = Date.now();
+        this.closeSubscribers(run);
+        this.scheduleRunCleanup(sessionId, 60000);
+        return;
       }
 
       // Finalize message content
