@@ -5,6 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const http = require("http");
+const { resolveSpawnCommand } = require("./spawn-command");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 const ECOSYSTEM_PATH = path.join(ROOT_DIR, "ecosystem.config.js");
@@ -222,10 +223,14 @@ function handleLogs() {
   if (!pm2) return;
   console.log(`${C.cyan}Streaming live PutmeIn logs (Ctrl+C to exit)...${C.reset}\n`);
   const parts = pm2.split(" ");
-  const baseCmd = parts[0];
+  const command = parts[0];
   const baseArgs = parts.slice(1).concat(["logs", "putmein-ray", "putmein-brain", "--lines", "50"]);
-  spawn(baseCmd, baseArgs, {
+  const child = spawn(resolveSpawnCommand(command), baseArgs, {
     stdio: "inherit",
+  });
+
+  child.on("error", (err) => {
+    console.error(`${C.red}[ERROR]${C.reset} Failed to stream PutmeIn logs: ${err.message}`);
   });
 }
 
