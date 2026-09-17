@@ -103,6 +103,7 @@ if (fs.existsSync(brainScript) && !isWindows) {
 // Resolve paths for Ray Next.js standalone server
 const candidateRayPaths = [
   path.join(__dirname, "dist", "ray", "server.js"),
+  path.join(__dirname, "ray", ".next", "standalone", "ray", "server.js"),
   path.join(__dirname, "ray", ".next", "standalone", "server.js"),
 ];
 

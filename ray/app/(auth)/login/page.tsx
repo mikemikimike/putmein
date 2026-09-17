@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { getSafeRedirectUrl } from "@/lib/redirect";
 
 const DEFAULT_INSTALL_CMD = "curl -fsSL https://putme.in/install.sh | bash";
 
@@ -38,7 +39,10 @@ export default function LoginPage() {
         const data = await res.json().catch(() => ({}));
         if (res.ok) {
           if (data.setupRequired) {
-            router.replace("/setup");
+            const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+            const fromParam = searchParams?.get("from");
+            const setupUrl = fromParam ? `/setup?from=${encodeURIComponent(fromParam)}` : "/setup";
+            router.replace(setupUrl);
           }
         } else if (data.isDbInitError || isDatabaseErrorString(data.error)) {
           setIsDbInitError(true);
@@ -108,7 +112,14 @@ export default function LoginPage() {
         return;
       }
 
-      window.location.href = "/chat";
+      // Respect the 'from' query parameter if valid, falling back to /chat
+      let destination = "/chat";
+      if (typeof window !== "undefined") {
+        const searchParams = new URLSearchParams(window.location.search);
+        destination = getSafeRedirectUrl(searchParams.get("from"));
+      }
+
+      window.location.href = destination;
     } catch {
       setIsDbInitError(false);
       setError("Network connection error. Please check your connection and try again.");

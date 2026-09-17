@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { getSafeRedirectUrl } from "@/lib/redirect";
 
 function isDatabaseErrorString(msg?: string): boolean {
   if (!msg || typeof msg !== "string") return false;
@@ -143,8 +144,13 @@ export default function SetupPage() {
         return;
       }
 
-      // Successful setup — redirect into dashboard
-      window.location.href = "/chat";
+      // Successful setup — redirect into dashboard or requested destination
+      let destination = "/chat";
+      if (typeof window !== "undefined") {
+        const searchParams = new URLSearchParams(window.location.search);
+        destination = getSafeRedirectUrl(searchParams.get("from"));
+      }
+      window.location.href = destination;
     } catch {
       setIsDbInitError(false);
       setError("Network connection error. Please try again.");

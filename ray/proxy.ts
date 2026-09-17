@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { isDashboardHost } from "@/lib/network";
 import { isTokenRevoked } from "@/lib/auth";
+import { getSafeRedirectUrl } from "@/lib/redirect";
 
 const INSECURE_JWT_DEFAULTS = [
   "putmein-jwt-secret-default-key-2024",
@@ -84,13 +85,16 @@ export async function proxy(request: NextRequest) {
     // Redirect unauthenticated users away from protected routes
     if (isProtected && !isAuthenticated) {
       const loginUrl = new URL("/login", request.url);
-      loginUrl.searchParams.set("from", pathname);
+      const targetPath = pathname + (search || "");
+      loginUrl.searchParams.set("from", targetPath);
       return NextResponse.redirect(loginUrl);
     }
 
-    // Redirect authenticated users away from login/setup
+    // Redirect authenticated users away from login/setup to intended destination or /chat
     if (isAuthRoute && isAuthenticated) {
-      return NextResponse.redirect(new URL("/chat", request.url));
+      const fromParam = request.nextUrl.searchParams.get("from");
+      const destination = getSafeRedirectUrl(fromParam);
+      return NextResponse.redirect(new URL(destination, request.url));
     }
 
     return NextResponse.next();

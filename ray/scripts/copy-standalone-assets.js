@@ -29,4 +29,16 @@ if (fs.existsSync(standaloneDir)) {
       fs.cpSync(publicSrc, publicDest, { recursive: true });
     }
   }
+
+  // If server.js exists in nested ray directory but not at the root of standalone,
+  // create a bridge server.js so direct execution of `node .next/standalone/server.js` also works.
+  const rootServerJs = path.join(standaloneDir, "server.js");
+  const nestedServerJs = path.join(nestedRayDir, "server.js");
+  if (!fs.existsSync(rootServerJs) && fs.existsSync(nestedServerJs)) {
+    fs.writeFileSync(
+      rootServerJs,
+      `// Auto-generated bridge for standalone Next.js server\nconst path = require("path");\nprocess.chdir(path.join(__dirname, "ray"));\nrequire("./ray/server.js");\n`
+    );
+  }
 }
+
