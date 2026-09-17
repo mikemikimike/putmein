@@ -230,8 +230,18 @@ function handleLogs() {
 }
 
 function handleStarter() {
+  if (process.platform === "win32") {
+    console.error(`${C.red}[ERROR]${C.reset} Automatic startup configuration is not supported on Windows by PM2.`);
+    console.error(`Configure PutmeIn to launch at sign-in using Windows startup settings instead.`);
+    process.exitCode = 1;
+    return;
+  }
+
   const pm2 = getPm2Command();
-  if (!pm2) return;
+  if (!pm2) {
+    process.exitCode = 1;
+    return;
+  }
   console.log(`${C.cyan}➜ Configuring PutmeIn to start automatically on system boot...${C.reset}`);
   try {
     execSync(`${pm2} startup`, { stdio: "inherit" });
@@ -239,18 +249,29 @@ function handleStarter() {
     console.log(`\n${C.green}✔ PutmeIn will now start automatically on system boot!${C.reset}\n`);
   } catch (err) {
     console.error(`${C.red}[ERROR]${C.reset} Failed to set up startup: ${err.message}`);
+    process.exitCode = 1;
   }
 }
 
 function handleNoStartup() {
+  if (process.platform === "win32") {
+    console.error(`${C.red}[ERROR]${C.reset} Automatic startup configuration is not supported on Windows by PM2.`);
+    process.exitCode = 1;
+    return;
+  }
+
   const pm2 = getPm2Command();
-  if (!pm2) return;
+  if (!pm2) {
+    process.exitCode = 1;
+    return;
+  }
   console.log(`${C.cyan}➜ Removing PutmeIn from system boot startup...${C.reset}`);
   try {
     execSync(`${pm2} unstartup`, { stdio: "inherit" });
     console.log(`\n${C.green}✔ PutmeIn removed from system boot startup.${C.reset}\n`);
   } catch (err) {
     console.error(`${C.red}[ERROR]${C.reset} Failed to remove startup: ${err.message}`);
+    process.exitCode = 1;
   }
 }
 
