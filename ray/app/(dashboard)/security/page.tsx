@@ -74,6 +74,8 @@ export default function SecurityPage() {
   });
   const [blockedPipelines, setBlockedPipelines] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
   const [scanningProject, setScanningProject] = useState<string | null>(null);
 
   // Scan modal state
@@ -95,6 +97,7 @@ export default function SecurityPage() {
   const [ruleCategoryFilter, setRuleCategoryFilter] = useState<string>("all");
 
   const fetchData = useCallback(async () => {
+    setDataError(null);
     try {
       const [scansRes, rulesRes, projectsRes] = await Promise.all([
         fetch("/api/security/scans"),
@@ -102,24 +105,29 @@ export default function SecurityPage() {
         fetch("/api/monitor/projects"),
       ]);
 
-      if (scansRes.ok) {
-        const data = await scansRes.json();
-        setScans(data.scans || []);
-        if (data.stats) setStats(data.stats);
-        if (data.blockedPipelines) setBlockedPipelines(data.blockedPipelines);
+      const failedResponse = [
+        { resource: "security scans", response: scansRes },
+        { resource: "security rules", response: rulesRes },
+        { resource: "projects", response: projectsRes },
+      ].find(({ response }) => !response.ok);
+      if (failedResponse) {
+        const details = await failedResponse.response.json().catch(() => ({}));
+        throw new Error(details.error || `Failed to load ${failedResponse.resource}`);
       }
 
-      if (rulesRes.ok) {
-        const data = await rulesRes.json();
-        setRules(data.rules || []);
-      }
-
-      if (projectsRes.ok) {
-        const data = await projectsRes.json();
-        setProjects(data.projects || []);
-      }
-    } catch { /* silent */ }
-    finally {
+      const [scansData, rulesData, projectsData] = await Promise.all([
+        scansRes.json(),
+        rulesRes.json(),
+        projectsRes.json(),
+      ]);
+      setScans(scansData.scans || []);
+      if (scansData.stats) setStats(scansData.stats);
+      if (scansData.blockedPipelines) setBlockedPipelines(scansData.blockedPipelines);
+      setRules(rulesData.rules || []);
+      setProjects(projectsData.projects || []);
+    } catch (error: unknown) {
+      setDataError(error instanceof Error ? error.message : "Failed to load Security Center data");
+    } finally {
       setLoading(false);
     }
   }, []);
@@ -133,6 +141,7 @@ export default function SecurityPage() {
   // Run security scan
   const handleTriggerScan = async (project: { id?: string; name: string; projectPath: string }) => {
     setScanningProject(project.name);
+    setScanError(null);
     setShowScanModal(false);
     try {
       const res = await fetch("/api/security/scan", {
@@ -145,15 +154,19 @@ export default function SecurityPage() {
           trigger: "manual",
         }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.scan) {
-          setScans((prev) => [data.scan, ...prev.filter((s) => s.id !== data.scan.id)]);
-          setSelectedScanReport(data.scan);
-        }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Security audit failed (${res.status})`);
       }
-    } catch { /* silent */ }
-    finally {
+
+      const data = await res.json();
+      if (data.scan) {
+        setScans((prev) => [data.scan, ...prev.filter((s) => s.id !== data.scan.id)]);
+        setSelectedScanReport(data.scan);
+      }
+    } catch (error: unknown) {
+      setScanError(error instanceof Error ? error.message : "Security audit failed");
+    } finally {
       setScanningProject(null);
       fetchData();
     }
@@ -249,6 +262,36 @@ export default function SecurityPage() {
           </button>
         </div>
       </div>
+
+      {dataError && (
+        <div role="alert" className="mb-6 flex items-center justify-between gap-4 rounded-2xl border border-red-500/30 bg-red-500/[0.06] p-4 text-sm text-red-200">
+          <div className="flex items-center gap-3">
+            <Icon icon="lucide:circle-alert" className="h-5 w-5 shrink-0 text-red-400" />
+            <div>
+              <p className="font-semibold">Security Center data could not be loaded</p>
+              <p className="mt-1 text-xs text-red-200/70">{dataError}</p>
+            </div>
+          </div>
+          <button onClick={() => fetchData()} className="ray-btn-ghost shrink-0 px-3 py-1.5 text-xs cursor-pointer">
+            Retry
+          </button>
+        </div>
+      )}
+
+      {scanError && (
+        <div role="alert" className="mb-6 flex items-center justify-between gap-4 rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-4 text-sm text-amber-200">
+          <div className="flex items-center gap-3">
+            <Icon icon="lucide:triangle-alert" className="h-5 w-5 shrink-0 text-amber-400" />
+            <div>
+              <p className="font-semibold">Security audit failed</p>
+              <p className="mt-1 text-xs text-amber-200/70">{scanError}</p>
+            </div>
+          </div>
+          <button onClick={() => setScanError(null)} className="ray-btn-ghost shrink-0 px-3 py-1.5 text-xs cursor-pointer">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Stats Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 mb-6">
