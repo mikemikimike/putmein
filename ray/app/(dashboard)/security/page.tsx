@@ -75,6 +75,7 @@ export default function SecurityPage() {
   const [blockedPipelines, setBlockedPipelines] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [scanningProject, setScanningProject] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   // Scan modal state
   const [showScanModal, setShowScanModal] = useState(false);
@@ -133,6 +134,7 @@ export default function SecurityPage() {
   // Run security scan
   const handleTriggerScan = async (project: { id?: string; name: string; projectPath: string }) => {
     setScanningProject(project.name);
+    setScanError(null);
     setShowScanModal(false);
     try {
       const res = await fetch("/api/security/scan", {
@@ -145,15 +147,18 @@ export default function SecurityPage() {
           trigger: "manual",
         }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.scan) {
-          setScans((prev) => [data.scan, ...prev.filter((s) => s.id !== data.scan.id)]);
-          setSelectedScanReport(data.scan);
-        }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `Security audit failed (${res.status})`);
       }
-    } catch { /* silent */ }
-    finally {
+      if (!data.scan) {
+        throw new Error("Security audit completed without a saved result. Please retry.");
+      }
+      setScans((prev) => [data.scan, ...prev.filter((s) => s.id !== data.scan.id)]);
+      setSelectedScanReport(data.scan);
+    } catch (err: unknown) {
+      setScanError(err instanceof Error ? err.message : "Security audit failed. Please retry.");
+    } finally {
       setScanningProject(null);
       fetchData();
     }
@@ -249,6 +254,24 @@ export default function SecurityPage() {
           </button>
         </div>
       </div>
+
+      {scanError && (
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/[0.06] p-4 text-xs text-red-200">
+          <Icon icon="lucide:circle-alert" className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-red-300">Security audit failed</p>
+            <p className="mt-1 break-words text-red-200/80">{scanError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setScanError(null)}
+            aria-label="Dismiss security audit error"
+            className="shrink-0 text-red-300/70 hover:text-red-200"
+          >
+            <Icon icon="lucide:x" className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Stats Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 mb-6">
