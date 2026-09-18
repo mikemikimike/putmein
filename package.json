@@ -24,7 +24,8 @@
     "restart": "node bin/ray.js restart",
     "status": "node bin/ray.js status",
     "logs": "node bin/ray.js logs",
-    "cohen": "node bin/ray.js cohen"
+    "cohen": "node bin/ray.js cohen",
+    "test:installer": "node scripts/test-installer-safety.js"
   },
   "keywords": [
     "putmein",
