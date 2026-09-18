@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -10,6 +12,8 @@ import (
 
 	"brain/server/internal/monitor"
 )
+
+var errProjectFileOutsideRoot = errors.New("file path is outside project root")
 
 // FileTreeNode represents a node in the project file structure explorer
 type FileTreeNode struct {
@@ -45,13 +49,13 @@ func projectsFilesHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"root":     projectPath,
-		"tree":     tree,
-		"name":     filepath.Base(projectPath),
+		"root": projectPath,
+		"tree": tree,
+		"name": filepath.Base(projectPath),
 	})
 }
 
-// GET /v1/projects/file-content?path=/path/to/file
+// GET /v1/projects/file-content?root=/path/to/project&path=/path/to/file
 func projectsFileContentHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -63,6 +67,23 @@ func projectsFileContentHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "path parameter required", http.StatusBadRequest)
 		return
 	}
+
+	projectRoot := r.URL.Query().Get("root")
+	if projectRoot == "" {
+		http.Error(w, "project root parameter required", http.StatusBadRequest)
+		return
+	}
+
+	resolvedPath, err := resolveProjectFile(projectRoot, filePath)
+	if err != nil {
+		if errors.Is(err, errProjectFileOutsideRoot) {
+			http.Error(w, "file is outside project directory", http.StatusForbidden)
+			return
+		}
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
+	filePath = resolvedPath
 
 	info, err := os.Stat(filePath)
 	if err != nil {
@@ -99,6 +120,36 @@ func projectsFileContentHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func resolveProjectFile(projectRoot, filePath string) (string, error) {
+	canonicalRoot, err := filepath.EvalSymlinks(projectRoot)
+	if err != nil {
+		return "", err
+	}
+
+	rootInfo, err := os.Stat(canonicalRoot)
+	if err != nil {
+		return "", err
+	}
+	if !rootInfo.IsDir() {
+		return "", errors.New("project root is not a directory")
+	}
+
+	canonicalFile, err := filepath.EvalSymlinks(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	relativePath, err := filepath.Rel(canonicalRoot, canonicalFile)
+	if err != nil {
+		return "", errProjectFileOutsideRoot
+	}
+	if relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) || filepath.IsAbs(relativePath) {
+		return "", errProjectFileOutsideRoot
+	}
+
+	return canonicalFile, nil
+}
+
 // POST /v1/projects/analyze — trigger AI memory analysis
 func projectsAnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -119,7 +170,7 @@ func projectsAnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 		req.ModelID = "MiniMax-M2.5"
 	}
 
-	monitor.AnalyzeProjectMemory(r.Context(), req.ModelID, req.Path, func(res monitor.MemoryResult) {
+	monitor.AnalyzeProjectMemory(context.WithoutCancel(r.Context()), req.ModelID, req.Path, func(res monitor.MemoryResult) {
 		// Asynchronous callback complete
 	})
 

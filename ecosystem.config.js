@@ -2,6 +2,7 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const crypto = require("crypto");
+const dotenv = require("dotenv");
 
 // Load configuration from all possible env locations in priority order
 let userEnv = {};
@@ -15,16 +16,10 @@ const envCandidates = [
 
 for (const envPath of envCandidates) {
   if (fs.existsSync(envPath)) {
-    const content = fs.readFileSync(envPath, "utf-8");
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith("#") && trimmed.includes("=")) {
-        const idx = trimmed.indexOf("=");
-        const key = trimmed.slice(0, idx).trim();
-        const val = trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, "");
-        if (!userEnv[key]) {
-          userEnv[key] = val;
-        }
+    const parsedEnv = dotenv.parse(fs.readFileSync(envPath, "utf-8"));
+    for (const [key, value] of Object.entries(parsedEnv)) {
+      if (userEnv[key] === undefined) {
+        userEnv[key] = value;
       }
     }
   }
@@ -122,6 +117,7 @@ module.exports = {
       cwd: path.dirname(brainScript),
       interpreter: "none",
       exec_mode: "fork",
+      windowsHide: true,
       autorestart: true,
       max_restarts: 10,
       restart_delay: 2000,
@@ -137,6 +133,7 @@ module.exports = {
       name: "putmein-ray",
       script: rayScript,
       cwd: rayCwd,
+      windowsHide: true,
       autorestart: true,
       max_restarts: 10,
       restart_delay: 2000,
@@ -144,6 +141,7 @@ module.exports = {
         ...userEnv,
         PORT: rayPort,
         NODE_ENV: "production",
+        RAY_PUBLIC_URL: userEnv.RAY_PUBLIC_URL || `http://localhost:${rayPort}`,
         BRAIN_URL: `http://localhost:${brainPort}`,
         NEXT_PUBLIC_BRAIN_URL: `http://localhost:${brainPort}`,
         BRAIN_INTERNAL_SECRET: brainSecret,

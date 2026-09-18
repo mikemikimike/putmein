@@ -1,16 +1,25 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { isPublicHttpsOrigin, resolvePublicOrigin } from "@/lib/github-manifest";
 
 // GET /api/github/app/manifest — generates GitHub App manifest
-export async function GET(req: NextRequest) {
-  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost:4567";
-  const proto = req.headers.get("x-forwarded-proto") || (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
-  const origin = `${proto}://${host}`;
-  const isPublicHttps = origin.startsWith("https://") && !origin.includes("localhost") && !origin.includes("127.0.0.1");
+export async function GET() {
+  let origin: string;
+  try {
+    origin = resolvePublicOrigin();
+  } catch (error) {
+    console.error("GitHub App manifest public URL configuration error:", error);
+    return NextResponse.json(
+      { error: "GitHub App manifest public URL is not configured correctly." },
+      { status: 500 },
+    );
+  }
+
+  const isPublicHttps = isPublicHttpsOrigin(origin);
 
   const randomSuffix = Math.floor(1000 + Math.random() * 9000);
   const appName = `Ray-Cloud-${randomSuffix}`;
 
-  const manifest: Record<string, any> = {
+  const manifest: Record<string, unknown> = {
     name: appName,
     url: origin,
     hook_attributes: {

@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
     // Check running containers via Brain
     if (!targetPort) {
       try {
-        const cRes = await fetch(`${BRAIN_URL}/v1/containers`, { signal: AbortSignal.timeout(1000) });
+        const cRes = await fetch(`${BRAIN_URL}/v1/containers`, { headers: { "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" }, signal: AbortSignal.timeout(1000) });
         if (cRes.ok) {
           const cData = await cRes.json();
           const baseName = matchedProject.name.toLowerCase();

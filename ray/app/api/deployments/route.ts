@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     // Check containers from Brain
     let containers: any[] = [];
     try {
-      const cRes = await fetch(`${BRAIN_URL}/v1/containers`, { signal: AbortSignal.timeout(3000) });
+      const cRes = await fetch(`${BRAIN_URL}/v1/containers`, { headers: { "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" }, signal: AbortSignal.timeout(3000) });
       if (cRes.ok) {
         const cData = await cRes.json();
         containers = cData.containers || [];

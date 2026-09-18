@@ -41,6 +41,17 @@ function Test-DockerRunning {
     }
 }
 
+function New-RandomHex([int]$byteCount) {
+    $bytes = New-Object byte[] $byteCount
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    } finally {
+        $rng.Dispose()
+    }
+    return [System.BitConverter]::ToString($bytes).Replace("-", "").ToLowerInvariant()
+}
+
 Write-Color "██████╗ ██╗   ██╗████████╗███╗   ███╗███████╗   ██╗███╗   ██╗" Cyan
 Write-Color "██╔══██╗██║   ██║╚══██╔══╝████╗ ████║██╔════╝   ██║████╗  ██║" Cyan
 Write-Color "██████╔╝██║   ██║   ██║   ██╔████╔██║█████╗     ██║██╔██╗ ██║" Cyan
@@ -176,7 +187,20 @@ if (!(Test-Path $configDir)) {
 $envFile = Join-Path $configDir ".env"
 $mysqlContainer = "putmein-mysql"
 $mysqlPort = "3306"
-$dbPassword = "root"
+$dbPassword = ""
+
+# Reuse the password saved in an existing environment file so rerunning the
+# installer keeps access to an existing database. Generate a cryptographically
+# random password for fresh installations.
+if (Test-Path $envFile) {
+    $existingEnv = Get-Content -Path $envFile -Raw
+    if ($existingEnv -match 'DATABASE_URL="mysql://root:([^@"]+)@') {
+        $dbPassword = $Matches[1]
+    }
+}
+if ([string]::IsNullOrEmpty($dbPassword)) {
+    $dbPassword = New-RandomHex 32
+}
 
 if (Test-DockerRunning) {
     $existingContainers = @()
@@ -328,10 +352,6 @@ if (Test-DockerRunning) {
         }
     } catch {}
 }
-
-# Reset PM2 daemon to guarantee clean process table
-try { pm2 delete all 2>$null | Out-Null } catch {}
-try { pm2 kill 2>$null | Out-Null } catch {}
 
 # Start services via ray CLI or node fallback
 Write-Color "  Starting PutmeIn services (Ray & Brain)..." Cyan

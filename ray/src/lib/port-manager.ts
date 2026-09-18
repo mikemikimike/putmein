@@ -243,6 +243,7 @@ export async function getFullPortRegistry(userId?: string): Promise<PortRegistry
   let dockerPortsCount = 0;
   try {
     const cRes = await fetch(`${BRAIN_URL}/v1/containers`, {
+      headers: { "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
       signal: AbortSignal.timeout(2500),
     });
     if (cRes.ok) {
