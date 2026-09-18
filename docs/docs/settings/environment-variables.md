@@ -17,6 +17,7 @@ PutmeIn reads runtime variables across Ray (web console) and Brain (AI orchestra
 | `DATABASE_URL` | — | Connection string for MySQL / MariaDB (e.g. `mysql://user:pass@host:3306/db`). | Yes |
 | `JWT_SECRET` | *auto-generated* (per install) | Cryptographically secure 256-bit key for session JWT signing. Insecure defaults are rejected. | Highly Recommended |
 | `RAY_PORT` | `4567` | Port used by the Ray web console in daemon mode (`3000` in dev). | Optional |
+| `RAY_PUBLIC_URL` | `http://localhost:4567` in local installs | Canonical public origin used for GitHub App manifest callback and webhook URLs. Request host headers are ignored; configure this for public deployments. | Optional locally, required for direct production launches |
 | `BRAIN_PORT` | `4500` | Port used by the Brain AI engine API (`3100` in dev). | Optional |
 | `BRAIN_INTERNAL_SECRET` | *auto-generated* | Cryptographic token for secure Ray ↔ Brain inter-service RPC. | Optional |
 | `AGENT_AUTONOMOUS` | `false` | Enable or disable autonomous DevOps action mode. | Optional |

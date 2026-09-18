@@ -51,7 +51,7 @@ export async function POST(
       try {
         const cLogsRes = await fetch(
           `${BRAIN_URL}/v1/deploy/logs?container=${encodeURIComponent(deployment.containerName)}&lines=80`,
-          { signal: AbortSignal.timeout(2000) }
+          { headers: { "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" }, signal: AbortSignal.timeout(2000) }
         );
         if (cLogsRes.ok) {
           const cLogsData = await cLogsRes.json();

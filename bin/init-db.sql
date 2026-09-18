@@ -180,6 +180,28 @@ CREATE TABLE IF NOT EXISTS `ray_pipeline_runs` (
   CONSTRAINT `ray_pipeline_runs_pipelineId_fkey` FOREIGN KEY (`pipelineId`) REFERENCES `ray_pipelines` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `ray_security_scans` (
+  `id` VARCHAR(191) NOT NULL,
+  `userId` VARCHAR(191) NOT NULL,
+  `projectId` VARCHAR(191) NULL,
+  `projectName` VARCHAR(191) NOT NULL,
+  `trigger` VARCHAR(191) NOT NULL,
+  `status` VARCHAR(191) NOT NULL,
+  `dangerCount` INT NOT NULL DEFAULT 0,
+  `warnCount` INT NOT NULL DEFAULT 0,
+  `infoCount` INT NOT NULL DEFAULT 0,
+  `findings` LONGTEXT NOT NULL,
+  `logs` LONGTEXT NOT NULL,
+  `overrideBy` VARCHAR(191) NULL,
+  `overridden` BOOLEAN NOT NULL DEFAULT false,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  INDEX `ray_security_scans_userId_idx`(`userId`),
+  INDEX `ray_security_scans_projectId_idx`(`projectId`),
+  CONSTRAINT `ray_security_scans_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `ray_revoked_tokens` (
   `id` VARCHAR(191) NOT NULL,
   `jti` VARCHAR(191) NULL,

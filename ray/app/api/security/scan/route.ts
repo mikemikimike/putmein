@@ -40,7 +40,9 @@ export async function POST(req: NextRequest) {
         trigger,
         modelId,
       }),
-      signal: AbortSignal.timeout(60000),
+      // Brain's AI client allows up to 120s for a complete audit response.
+      // Keep the gateway timeout aligned so a slow but valid scan can still be persisted.
+      signal: AbortSignal.timeout(120000),
     });
 
     if (!bRes.ok) {

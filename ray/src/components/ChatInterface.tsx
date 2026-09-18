@@ -17,6 +17,7 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import ModelSelector, { MODELS } from "./ModelSelector";
 import { Icon } from "@iconify/react";
 import { StateSpinner } from "./StateSpinner";
+import { parseChatErrorLine } from "@/lib/chat-stream.mjs";
 
 /* ── Tool Block & Thinking Accordion ────────────── */
 export interface ToolBlock {
@@ -53,6 +54,45 @@ function isApiKeyError(content?: string): boolean {
     lower.includes("not configured") ||
     lower.includes("authentication failed")
   );
+}
+
+function getProviderFromModelId(id: string): string {
+  const model = MODELS.find((m) => m.id === id);
+  if (model?.provider) return model.provider;
+  if (id.startsWith("claude-")) return "claude";
+  if (id.startsWith("gpt-") || id.startsWith("o3") || id.startsWith("chatgpt")) return "openai";
+  if (id.startsWith("deepseek-")) return "deepseek";
+  if (id.startsWith("gemini-")) return "gemini";
+  if (id.startsWith("openrouter/")) return "openrouter";
+  return "ozias";
+}
+
+function isProviderKeyConfigured(provider: string, apiKeys: Record<string, boolean> | null): boolean {
+  if (!apiKeys) return true; // not loaded yet, avoid false alerts
+  if (provider === "ozias" || provider === "minimax") {
+    return Boolean(apiKeys.ozias || apiKeys.minimax);
+  }
+  return Boolean(apiKeys[provider]);
+}
+
+function getProviderDisplayName(provider: string): string {
+  switch (provider) {
+    case "ozias":
+    case "minimax":
+      return "Ozias";
+    case "claude":
+      return "Anthropic Claude";
+    case "openai":
+      return "OpenAI";
+    case "deepseek":
+      return "DeepSeek";
+    case "gemini":
+      return "Google Gemini";
+    case "openrouter":
+      return "OpenRouter";
+    default:
+      return provider.charAt(0).toUpperCase() + provider.slice(1);
+  }
 }
 
 export type MessagePart =
@@ -1270,8 +1310,9 @@ export default function ChatInterface({
   }, []);
 
   const [deploymentsDir, setDeploymentsDir] = useState<string>("~/.ray/deployments");
+  const [apiKeysStatus, setApiKeysStatus] = useState<Record<string, boolean> | null>(null);
 
-  useEffect(() => {
+  const fetchSettings = useCallback(() => {
     fetch("/api/settings")
       .then((r) => r.json())
       .then((data) => {
@@ -1279,9 +1320,22 @@ export default function ChatInterface({
         if (data.executionMode === "plan" || data.executionMode === "action") {
           setDefaultExecutionMode(data.executionMode);
         }
+        if (data.apiKeys && typeof data.apiKeys === "object") {
+          setApiKeysStatus(data.apiKeys);
+        }
       })
       .catch(() => { });
   }, []);
+
+  useEffect(() => {
+    fetchSettings();
+    window.addEventListener("focus", fetchSettings);
+    return () => window.removeEventListener("focus", fetchSettings);
+  }, [fetchSettings]);
+
+  const activeProvider = useMemo(() => getProviderFromModelId(modelId), [modelId]);
+  const isKeyConfigured = useMemo(() => isProviderKeyConfigured(activeProvider, apiKeysStatus), [activeProvider, apiKeysStatus]);
+  const activeProviderLabel = useMemo(() => getProviderDisplayName(activeProvider), [activeProvider]);
 
   useEffect(() => {
     if (!isUserScrolledUpRef.current) {
@@ -1347,19 +1401,8 @@ export default function ChatInterface({
           }
 
           // ── Vercel AI SDK error stream line: 3:"error message" ──
-          if (line.startsWith("3:")) {
-            try {
-              const parsed = JSON.parse(line.slice(2));
-              if (typeof parsed === "string") {
-                throw new Error(parsed);
-              }
-            } catch (parseErr) {
-              if (parseErr instanceof Error && !parseErr.message.includes("Unexpected token")) {
-                throw parseErr;
-              }
-              throw new Error(line.slice(2));
-            }
-          }
+          const streamError = parseChatErrorLine(line);
+          if (streamError) throw new Error(streamError);
 
           // ── Structured SSE event: data: {...} ──
           if (line.startsWith("data: ")) {
@@ -1566,9 +1609,18 @@ export default function ChatInterface({
         setIsLoading(false);
         setMessages((prev) => prev.map((m) => m.streaming ? { ...m, streaming: false } : m));
       }
-    } catch {
+    } catch (err: unknown) {
+      const isAbort = err instanceof Error && err.name === "AbortError";
+      const errorMessage = err instanceof Error ? err.message : "Error generating response";
       setIsLoading(false);
-      setMessages((prev) => prev.map((m) => m.streaming ? { ...m, streaming: false } : m));
+      setMessages((prev) => prev.map((m) => m.streaming
+        ? {
+            ...m,
+            errorMessage: isAbort ? undefined : errorMessage,
+            isRetryable: !isAbort,
+            streaming: false,
+          }
+        : m));
     }
   }, []);
 
@@ -2629,6 +2681,36 @@ CRITICAL INSTRUCTIONS FOR AI:
     setDeployMode(null);
     setExecutionMode(null);
     setChipOrder([]);
+    // Instant pre-flight check: if active model's API key is missing, show error card in 0ms
+    const provider = getProviderFromModelId(modelId);
+    const hasKey = isProviderKeyConfigured(provider, apiKeysStatus);
+    if (apiKeysStatus !== null && !hasKey) {
+      const providerLabel = getProviderDisplayName(provider);
+      const selectedModelObj = MODELS.find((m) => m.id === modelId);
+      const modelLabel = selectedModelObj?.label || modelId;
+      const keyErrMsg = `API key not configured: ${modelLabel} requires an API key for ${providerLabel}. Please add your key in Settings → Keys to start using this model.`;
+
+      const instantAssistantMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: "",
+        errorMessage: keyErrMsg,
+        timestamp: new Date(),
+        streaming: false,
+      };
+
+      const newMessages = [...messages, userMsg, instantAssistantMsg];
+      setMessages(newMessages);
+      setIsLoading(false);
+
+      // Persist user query and error to session in background
+      ensureSession(cleanText).then((sid) => {
+        saveMessages(sid, newMessages).catch(() => {});
+      }).catch(() => {});
+
+      return;
+    }
+
     const assistantMsg: Message = {
       id: (Date.now() + 1).toString(),
       role: "assistant",
@@ -2918,19 +3000,8 @@ CRITICAL INSTRUCTIONS FOR AI:
         }
 
         // ── Vercel AI SDK error stream line: 3:"error message" ──
-        if (line.startsWith("3:")) {
-          try {
-            const parsed = JSON.parse(line.slice(2));
-            if (typeof parsed === "string") {
-              throw new Error(parsed);
-            }
-          } catch (parseErr) {
-            if (parseErr instanceof Error && !parseErr.message.includes("Unexpected token")) {
-              throw parseErr;
-            }
-            throw new Error(line.slice(2));
-          }
-        }
+        const streamError = parseChatErrorLine(line);
+        if (streamError) throw new Error(streamError);
         return false;
       };
 
@@ -3406,9 +3477,23 @@ CRITICAL INSTRUCTIONS FOR AI:
             <h2 className="font-jersey text-4xl text-white mb-2 tracking-wide">
               Hi, I&apos;m {modelName}
             </h2>
-            <p className="text-sm mb-8 max-w-sm" style={{ color: "rgba(255,255,255,0.35)" }}>
+            <p className="text-sm mb-6 max-w-sm" style={{ color: "rgba(255,255,255,0.35)" }}>
               Your AI assistant for servers, deployments, and DevOps.
             </p>
+
+            {apiKeysStatus !== null && !isKeyConfigured && (
+              <div className="mb-8 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center gap-2.5 text-xs text-amber-200 animate-fade-in">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-amber-400 shrink-0">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <span>{activeProviderLabel} API key required for {modelName}.</span>
+                <Link href="/settings?tab=keys" className="underline font-semibold hover:text-white transition-colors cursor-pointer ml-1">
+                  Configure Key →
+                </Link>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full max-w-lg">
               {SUGGESTIONS.map((s, i) => (
@@ -3631,9 +3716,9 @@ CRITICAL INSTRUCTIONS FOR AI:
 
                           {/* Error card with Try again retry button / Auto-retry countdown */}
                           {(msg.errorMessage || isErrorContent(msg.content)) && (
-                            <div className={`rounded-xl border ${autoRetryCountdown !== null && autoRetryCountdown > 0 ? "border-amber-500/30 bg-amber-500/[0.08]" : "border-red-500/25 bg-red-500/[0.07]"} p-3.5 my-1.5 text-xs flex items-center justify-between gap-3 max-w-xl shadow-lg animate-fade-in`}>
+                            <div className={`rounded-xl border ${autoRetryCountdown !== null && autoRetryCountdown > 0 || isApiKeyError(msg.errorMessage || msg.content) ? "border-amber-500/30 bg-amber-500/[0.08]" : "border-red-500/25 bg-red-500/[0.07]"} p-3.5 my-1.5 text-xs flex items-center justify-between gap-3 max-w-xl shadow-lg animate-fade-in`}>
                               <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                                <div className={`w-5 h-5 rounded-md ${autoRetryCountdown !== null && autoRetryCountdown > 0 ? "bg-amber-500/15 text-amber-400" : "bg-red-500/15 text-red-400"} flex items-center justify-center shrink-0 mt-0.5`}>
+                                <div className={`w-5 h-5 rounded-md ${autoRetryCountdown !== null && autoRetryCountdown > 0 || isApiKeyError(msg.errorMessage || msg.content) ? "bg-amber-500/15 text-amber-400" : "bg-red-500/15 text-red-400"} flex items-center justify-center shrink-0 mt-0.5`}>
                                   {autoRetryCountdown !== null && autoRetryCountdown > 0 ? (
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-spin">
                                       <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
@@ -3643,14 +3728,14 @@ CRITICAL INSTRUCTIONS FOR AI:
                                   )}
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                  <div className={`font-semibold ${autoRetryCountdown !== null && autoRetryCountdown > 0 ? "text-amber-200" : "text-red-200"} text-xs mb-0.5`}>
+                                  <div className={`font-semibold ${autoRetryCountdown !== null && autoRetryCountdown > 0 || isApiKeyError(msg.errorMessage || msg.content) ? "text-amber-200" : "text-red-200"} text-xs mb-0.5`}>
                                     {autoRetryCountdown !== null && autoRetryCountdown > 0
                                       ? `Network Disconnected (Auto-retrying in ${autoRetryCountdown}s)`
                                       : isApiKeyError(msg.errorMessage || msg.content)
                                         ? "API Key Not Configured"
                                         : "Request Error"}
                                   </div>
-                                  <p className="text-white/80 leading-relaxed text-xs font-mono truncate">
+                                  <p className="text-white/80 leading-relaxed text-xs font-mono break-words whitespace-pre-wrap">
                                     {autoRetryCountdown !== null && autoRetryCountdown > 0
                                       ? `Attempt ${autoRetryAttempt}/5 — Resuming AI generation automatically...`
                                       : (msg.errorMessage || msg.content).replace(/^Error:\s*|^API Key Error:\s*/i, "")}
@@ -3840,6 +3925,32 @@ CRITICAL INSTRUCTIONS FOR AI:
           }}
           onFocus={() => { }}
         >
+          {/* Missing API Key Warning Banner */}
+          {apiKeysStatus !== null && !isKeyConfigured && (
+            <div className="mx-3 mt-3 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between gap-3 animate-in fade-in duration-200">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-5 h-5 rounded-md bg-amber-500/20 text-amber-300 flex items-center justify-center flex-shrink-0">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                </div>
+                <div className="text-xs text-amber-200/90 truncate">
+                  <span className="font-semibold text-amber-100">{activeProviderLabel} API key required</span>
+                  <span className="text-amber-300/70 hidden sm:inline"> — add it in settings to chat with {modelName}</span>
+                </div>
+              </div>
+              <Link
+                href="/settings?tab=keys"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/30 text-xs font-semibold transition-colors flex-shrink-0 cursor-pointer"
+              >
+                <span>Add Key</span>
+                <span className="text-[10px]">→</span>
+              </Link>
+            </div>
+          )}
+
           {/* Slash Commands (/) Pop-up Menu */}
           {slashQuery !== null && filteredSlashCommands.length > 0 && (
             <div

@@ -5,9 +5,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -32,6 +34,8 @@ type StreamChunk struct {
 	Err     error
 }
 
+const defaultRequestTimeout = 120 * time.Second
+
 // Client sends messages to an AI API (Anthropic, OpenAI, or Gemini).
 type Client struct {
 	httpClient *http.Client
@@ -42,7 +46,7 @@ type Client struct {
 func New() *Client {
 	models := GetModels()
 	return &Client{
-		httpClient: &http.Client{Timeout: 120 * time.Second},
+		httpClient: &http.Client{},
 		Model:      models[0],
 	}
 }
@@ -50,7 +54,7 @@ func New() *Client {
 // NewWithModel creates an AI client for a specific model ID.
 func NewWithModel(modelID string) *Client {
 	return &Client{
-		httpClient: &http.Client{Timeout: 120 * time.Second},
+		httpClient: &http.Client{},
 		Model:      GetModelByID(modelID),
 	}
 }
@@ -114,6 +118,16 @@ func formatAPIError(provider, modelName string, statusCode int, rawBody []byte) 
 	return fmt.Errorf("%s error (%d): Something went wrong with the AI provider request.", modelName, statusCode)
 }
 
+func formatStreamRequestError(modelName string, err error) error {
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) || os.IsTimeout(err) {
+		return fmt.Errorf("Request timed out while contacting %s. Please try again later.", modelName)
+	}
+	return fmt.Errorf("Connection failed: Unable to connect to %s. Please check your network connection or server status. Something went wrong.", modelName)
+}
+
 // AskStream sends a message and returns a channel of streaming chunks.
 // Dispatches to the appropriate protocol handler based on c.Model.Provider.
 func (c *Client) AskStream(ctx context.Context, mode PromptMode, userInput string, history []HistoryEntry) <-chan StreamChunk {
@@ -134,13 +148,16 @@ func (c *Client) AskStream(ctx context.Context, mode PromptMode, userInput strin
 	go func() {
 		defer close(ch)
 
+		requestCtx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
+		defer cancel()
+
 		switch c.Model.Provider {
 		case "openai", "openrouter":
-			c.askStreamOpenAI(ctx, mode, userInput, history, ch)
+			c.askStreamOpenAI(requestCtx, mode, userInput, history, ch)
 		case "gemini":
-			c.askStreamGemini(ctx, mode, userInput, history, ch)
+			c.askStreamGemini(requestCtx, mode, userInput, history, ch)
 		default: // "anthropic" / "ozias" / "minimax"
-			c.askStreamAnthropic(ctx, mode, userInput, history, ch)
+			c.askStreamAnthropic(requestCtx, mode, userInput, history, ch)
 		}
 	}()
 
@@ -222,10 +239,11 @@ func (c *Client) askStreamAnthropic(ctx context.Context, mode PromptMode, userIn
 	req.Header.Set("anthropic-version", "2023-06-01")
 	req.Header.Set("Accept", "text/event-stream")
 
-	streamClient := &http.Client{}
-	resp, err := streamClient.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		ch <- StreamChunk{Type: "error", Err: fmt.Errorf("Connection failed: Unable to connect to %s. Please check your network connection or server status. Something went wrong.", c.Model.Name)}
+		if requestErr := formatStreamRequestError(c.Model.Name, err); requestErr != nil {
+			ch <- StreamChunk{Type: "error", Err: requestErr}
+		}
 		return
 	}
 	defer resp.Body.Close()
@@ -285,8 +303,10 @@ func (c *Client) askStreamAnthropic(ctx context.Context, mode PromptMode, userIn
 		}
 	}
 
-	if err := scanner.Err(); err != nil && ctx.Err() == nil {
-		ch <- StreamChunk{Type: "error", Err: err}
+	if err := scanner.Err(); err != nil {
+		if requestErr := formatStreamRequestError(c.Model.Name, err); requestErr != nil {
+			ch <- StreamChunk{Type: "error", Err: requestErr}
+		}
 	}
 }
 
@@ -359,10 +379,11 @@ func (c *Client) askStreamOpenAI(ctx context.Context, mode PromptMode, userInput
 		req.Header.Set("X-Title", "Ray Dashboard")
 	}
 
-	streamClient := &http.Client{}
-	resp, err := streamClient.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		ch <- StreamChunk{Type: "error", Err: fmt.Errorf("Connection failed: Unable to connect to %s. Please check your network connection or server status. Something went wrong.", c.Model.Name)}
+		if requestErr := formatStreamRequestError(c.Model.Name, err); requestErr != nil {
+			ch <- StreamChunk{Type: "error", Err: requestErr}
+		}
 		return
 	}
 	defer resp.Body.Close()
@@ -422,8 +443,10 @@ func (c *Client) askStreamOpenAI(ctx context.Context, mode PromptMode, userInput
 		}
 	}
 
-	if err := scanner.Err(); err != nil && ctx.Err() == nil {
-		ch <- StreamChunk{Type: "error", Err: err}
+	if err := scanner.Err(); err != nil {
+		if requestErr := formatStreamRequestError(c.Model.Name, err); requestErr != nil {
+			ch <- StreamChunk{Type: "error", Err: requestErr}
+		}
 	}
 }
 
@@ -504,10 +527,11 @@ func (c *Client) askStreamGemini(ctx context.Context, mode PromptMode, userInput
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 
-	streamClient := &http.Client{}
-	resp, err := streamClient.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		ch <- StreamChunk{Type: "error", Err: fmt.Errorf("Connection failed: Unable to connect to %s. Please check your network connection or server status. Something went wrong.", c.Model.Name)}
+		if requestErr := formatStreamRequestError(c.Model.Name, err); requestErr != nil {
+			ch <- StreamChunk{Type: "error", Err: requestErr}
+		}
 		return
 	}
 	defer resp.Body.Close()
@@ -564,9 +588,11 @@ func (c *Client) askStreamGemini(ctx context.Context, mode PromptMode, userInput
 		}
 	}
 
-	if err := scanner.Err(); err != nil && ctx.Err() == nil {
-		ch <- StreamChunk{Type: "error", Err: err}
-	} else {
-		ch <- StreamChunk{Type: "done"}
+	if err := scanner.Err(); err != nil {
+		if requestErr := formatStreamRequestError(c.Model.Name, err); requestErr != nil {
+			ch <- StreamChunk{Type: "error", Err: requestErr}
+		}
+		return
 	}
+	ch <- StreamChunk{Type: "done"}
 }
