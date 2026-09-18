@@ -141,6 +141,7 @@ module.exports = {
         ...userEnv,
         PORT: rayPort,
         NODE_ENV: "production",
+        RAY_PUBLIC_URL: userEnv.RAY_PUBLIC_URL || `http://localhost:${rayPort}`,
         BRAIN_URL: `http://localhost:${brainPort}`,
         NEXT_PUBLIC_BRAIN_URL: `http://localhost:${brainPort}`,
         BRAIN_INTERNAL_SECRET: brainSecret,
