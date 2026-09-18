@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { verifyGithubWebhookSignature } from "@/lib/github-webhook";
 
 const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
@@ -12,13 +13,43 @@ export async function POST(
     const { id } = await params;
     const pipeline = await prisma.rayPipeline.findUnique({
       where: { id },
+      include: {
+        user: {
+          select: {
+            githubIntegrations: {
+              select: { webhookSecret: true },
+            },
+          },
+        },
+      },
     });
     if (!pipeline) {
       return NextResponse.json({ error: "Pipeline not found" }, { status: 404 });
     }
 
+    const rawBody = await req.text();
+    const signature = req.headers.get("x-hub-signature-256");
+    const integration = await prisma.rayGithubIntegration.findFirst({
+      where: { userId: pipeline.userId },
+      select: { webhookSecret: true },
+    });
+
+    if (!verifyGithubWebhookSignature(rawBody, signature, integration?.webhookSecret)) {
+      return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
+    }
+
     const event = req.headers.get("x-github-event") || "push";
-    const body = await req.json().catch(() => ({}));
+    let body: {
+      after?: string;
+      head_commit?: { id?: string; message?: string; author?: { name?: string } };
+      pusher?: { name?: string };
+    };
+
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json({ error: "Invalid webhook payload" }, { status: 400 });
+    }
 
     const commitHash = body.after || body.head_commit?.id || "webhook-push";
     const commitMessage = body.head_commit?.message || "Automated push trigger";

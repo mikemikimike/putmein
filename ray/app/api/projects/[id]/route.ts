@@ -39,7 +39,7 @@ export async function GET(
     // 1. Fetch active containers from Brain/Docker and registered deployments
     let container: any = null;
     try {
-      const cRes = await fetch(`${BRAIN_URL}/v1/containers`, { signal: AbortSignal.timeout(2500) });
+      const cRes = await fetch(`${BRAIN_URL}/v1/containers`, { headers: { "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" }, signal: AbortSignal.timeout(2500) });
       if (cRes.ok) {
         const cData = await cRes.json();
         const containers = cData.containers || [];
@@ -364,7 +364,7 @@ export async function DELETE(
       try {
         await fetch(`${BRAIN_URL}/v1/containers/${encodeURIComponent(cName)}/action`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
           body: JSON.stringify({ action: "remove" }),
           signal: AbortSignal.timeout(2000),
         });

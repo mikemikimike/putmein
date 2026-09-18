@@ -5,6 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const http = require("http");
+const { resolveSpawnCommand } = require("./spawn-command");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 const ECOSYSTEM_PATH = path.join(ROOT_DIR, "ecosystem.config.js");
@@ -219,19 +220,49 @@ function handleStatus() {
 
 function handleLogs() {
   const pm2 = getPm2Command();
-  if (!pm2) return;
+  if (!pm2) {
+    console.error(`${C.red}[ERROR]${C.reset} PM2 is required to view logs.`);
+    console.log(`Please install it globally using: ${C.yellow}npm install -g pm2${C.reset}`);
+    process.exit(1);
+  }
+
   console.log(`${C.cyan}Streaming live PutmeIn logs (Ctrl+C to exit)...${C.reset}\n`);
   const parts = pm2.split(" ");
-  const baseCmd = parts[0];
+  const command = parts[0];
   const baseArgs = parts.slice(1).concat(["logs", "putmein-ray", "putmein-brain", "--lines", "50"]);
-  spawn(baseCmd, baseArgs, {
-    stdio: "inherit",
-  });
+  const isWindows = process.platform === "win32";
+
+  try {
+    const child = spawn(resolveSpawnCommand(command), baseArgs, {
+      stdio: "inherit",
+      shell: isWindows,
+    });
+
+    child.on("error", (err) => {
+      console.error(`${C.red}[ERROR]${C.reset} Failed to stream PutmeIn logs: ${err.message}`);
+    });
+
+    child.on("exit", (code) => {
+      process.exit(code ?? 0);
+    });
+  } catch (err) {
+    console.error(`${C.red}[ERROR]${C.reset} Failed to stream PutmeIn logs: ${err.message}`);
+  }
 }
 
 function handleStarter() {
+  if (process.platform === "win32") {
+    console.error(`${C.red}[ERROR]${C.reset} Automatic startup configuration is not supported on Windows by PM2.`);
+    console.error(`Configure PutmeIn to launch at sign-in using Windows startup settings instead.`);
+    process.exitCode = 1;
+    return;
+  }
+
   const pm2 = getPm2Command();
-  if (!pm2) return;
+  if (!pm2) {
+    process.exitCode = 1;
+    return;
+  }
   console.log(`${C.cyan}➜ Configuring PutmeIn to start automatically on system boot...${C.reset}`);
   try {
     execSync(`${pm2} startup`, { stdio: "inherit" });
@@ -239,18 +270,29 @@ function handleStarter() {
     console.log(`\n${C.green}✔ PutmeIn will now start automatically on system boot!${C.reset}\n`);
   } catch (err) {
     console.error(`${C.red}[ERROR]${C.reset} Failed to set up startup: ${err.message}`);
+    process.exitCode = 1;
   }
 }
 
 function handleNoStartup() {
+  if (process.platform === "win32") {
+    console.error(`${C.red}[ERROR]${C.reset} Automatic startup configuration is not supported on Windows by PM2.`);
+    process.exitCode = 1;
+    return;
+  }
+
   const pm2 = getPm2Command();
-  if (!pm2) return;
+  if (!pm2) {
+    process.exitCode = 1;
+    return;
+  }
   console.log(`${C.cyan}➜ Removing PutmeIn from system boot startup...${C.reset}`);
   try {
     execSync(`${pm2} unstartup`, { stdio: "inherit" });
     console.log(`\n${C.green}✔ PutmeIn removed from system boot startup.${C.reset}\n`);
   } catch (err) {
     console.error(`${C.red}[ERROR]${C.reset} Failed to remove startup: ${err.message}`);
+    process.exitCode = 1;
   }
 }
 
@@ -269,8 +311,17 @@ function handleCohen() {
     process.exit(1);
   }
 
-  const child = spawn(cohenBin, [], { stdio: "inherit" });
-  child.on("exit", (code) => process.exit(code || 0));
+  try {
+    const child = spawn(cohenBin, [], { stdio: "inherit" });
+    child.on("error", (err) => {
+      console.error(`${C.red}[ERROR]${C.reset} Failed to launch Cohen: ${err.message}`);
+      process.exit(1);
+    });
+    child.on("exit", (code) => process.exit(code || 0));
+  } catch (err) {
+    console.error(`${C.red}[ERROR]${C.reset} Failed to launch Cohen: ${err.message}`);
+    process.exit(1);
+  }
 }
 
 function printHelp() {

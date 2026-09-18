@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import crypto from "crypto";
+import { verifyGithubWebhookSignature } from "@/lib/github-webhook";
 import path from "path";
 import fs from "fs";
 import { execSync } from "child_process";
@@ -13,20 +13,35 @@ const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 export async function POST(req: NextRequest) {
   try {
     const rawBody = await req.text();
-    const event = req.headers.get("x-github-event");
     const signature = req.headers.get("x-hub-signature-256");
-
-    if (event !== "push") {
-      return NextResponse.json({ message: `Ignored event: ${event}` });
+    const event = req.headers.get("x-github-event");
+    const allIntegrations = await prisma.rayGithubIntegration.findMany({
+      select: { webhookSecret: true },
+    });
+    if (!allIntegrations.some(({ webhookSecret }) =>
+      verifyGithubWebhookSignature(rawBody, signature, webhookSecret)
+    )) {
+      return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
     }
 
-    const payload = JSON.parse(rawBody);
+    let payload: {
+      repository?: { full_name?: string; clone_url?: string };
+      ref?: string;
+      head_commit?: { id?: string; message?: string; author?: { name?: string } };
+      pusher?: { name?: string };
+    };
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json({ error: "Invalid webhook payload" }, { status: 400 });
+    }
+
     const repoFullName = payload.repository?.full_name;
     const cloneUrl = payload.repository?.clone_url;
     const branch = payload.ref?.replace("refs/heads/", "");
     const headCommit = payload.head_commit;
 
-    if (!repoFullName) {
+    if (!repoFullName || !cloneUrl) {
       return NextResponse.json({ error: "No repository in payload" }, { status: 400 });
     }
 
@@ -57,6 +72,23 @@ export async function POST(req: NextRequest) {
 
     if (deployments.length === 0 && pipelines.length === 0) {
       return NextResponse.json({ message: "No matching deployment or pipeline registered for this repository" });
+    }
+
+    const userIds = [...new Set([...deployments, ...pipelines].map(({ userId }) => userId))];
+    const integrations: Array<{ webhookSecret: string | null }> = await prisma.rayGithubIntegration.findMany({
+      where: { userId: { in: userIds } },
+      select: { webhookSecret: true },
+    });
+    const signatureValid = integrations.some(({ webhookSecret }) =>
+      verifyGithubWebhookSignature(rawBody, signature, webhookSecret)
+    );
+
+    if (!signatureValid) {
+      return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
+    }
+
+    if (event !== "push") {
+      return NextResponse.json({ message: `Ignored event: ${event}` });
     }
 
     const baseDeployDir = await getDeploymentsDir();
@@ -145,7 +177,7 @@ export async function POST(req: NextRequest) {
       // Trigger build via brain /v1/deploy in background
       fetch(`${BRAIN_URL}/v1/deploy`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
         body: JSON.stringify({
           id: dep.id,
           userId: dep.userId,

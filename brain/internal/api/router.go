@@ -121,9 +121,9 @@ func NewRouter() http.Handler {
 	mux.HandleFunc("/v1/security/scans", securityScansHandler)
 
 	// Deploy routes
-	mux.HandleFunc("/v1/deploy", deployHandler)
-	mux.HandleFunc("/v1/deploy/logs", deployLogsHandler)
-	mux.HandleFunc("/v1/deploy/action", deployActionHandler)
+	mux.HandleFunc("/v1/deploy", requireInternalSecret(deployHandler))
+	mux.HandleFunc("/v1/deploy/logs", requireInternalSecret(deployLogsHandler))
+	mux.HandleFunc("/v1/deploy/action", requireInternalSecret(deployActionHandler))
 
 	// Ports route (real-time port discovery and allocation)
 	mux.HandleFunc("/v1/ports", portsHandler)
@@ -134,15 +134,15 @@ func NewRouter() http.Handler {
 	mux.HandleFunc("/v1/projects/analyze", projectsAnalyzeHandler)
 
 	// Container routes
-	mux.HandleFunc("/v1/containers", containersListHandler)
+	mux.HandleFunc("/v1/containers", requireInternalSecret(containersListHandler))
 	mux.HandleFunc("/v1/containers/", func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		if strings.HasSuffix(path, "/logs") {
-			containerLogsHandler(w, r)
+			requireInternalSecret(containerLogsHandler)(w, r)
 		} else if strings.Contains(path, "/start") || strings.Contains(path, "/stop") || strings.Contains(path, "/restart") || strings.Contains(path, "/remove") || strings.Contains(path, "/rm") {
-			containerActionHandler(w, r)
+			requireInternalSecret(containerActionHandler)(w, r)
 		} else {
-			containerInspectHandler(w, r)
+			requireInternalSecret(containerInspectHandler)(w, r)
 		}
 	})
 

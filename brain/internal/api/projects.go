@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -119,7 +120,7 @@ func projectsAnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 		req.ModelID = "MiniMax-M2.5"
 	}
 
-	monitor.AnalyzeProjectMemory(r.Context(), req.ModelID, req.Path, func(res monitor.MemoryResult) {
+	monitor.AnalyzeProjectMemory(context.WithoutCancel(r.Context()), req.ModelID, req.Path, func(res monitor.MemoryResult) {
 		// Asynchronous callback complete
 	})
 
