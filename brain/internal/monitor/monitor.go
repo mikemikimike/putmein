@@ -166,8 +166,8 @@ func (s *Service) AddProject(ctx context.Context, p *Project) (*Project, error) 
 // UpdateProject updates a project's config.
 func (s *Service) UpdateProject(id string, enabled *bool, intervalSec *int, status *ProjectStatus) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	ps, ok := s.projects[id]
-	s.mu.Unlock()
 	if !ok {
 		return
 	}
@@ -178,13 +178,16 @@ func (s *Service) UpdateProject(id string, enabled *bool, intervalSec *int, stat
 	if intervalSec != nil {
 		ps.project.IntervalSec = *intervalSec
 	}
+	if status != nil {
+		ps.project.Status = *status
+	}
 }
 
 // PauseProject stops polling for a project.
 func (s *Service) PauseProject(id string) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	ps, ok := s.projects[id]
-	s.mu.Unlock()
 	if !ok || ps.cancel == nil {
 		return
 	}
