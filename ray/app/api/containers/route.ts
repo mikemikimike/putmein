@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     const user = await verifyToken(token);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const res = await fetch(`${BRAIN_URL}/v1/containers`, { signal: AbortSignal.timeout(6000) });
+    const res = await fetch(`${BRAIN_URL}/v1/containers`, { headers: { "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" }, signal: AbortSignal.timeout(6000) });
     if (!res.ok) {
       return NextResponse.json({ containers: [], error: "Docker unavailable" }, { status: 200 });
     }

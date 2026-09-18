@@ -20,6 +20,7 @@ export async function GET(
     const lines = req.nextUrl.searchParams.get("lines") || "300";
 
     const res = await fetch(`${BRAIN_URL}/v1/containers/${encodeURIComponent(id)}/logs?lines=${lines}`, {
+      headers: { "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) {
