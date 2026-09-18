@@ -193,10 +193,14 @@ export default function ProjectDetailPage({
 
   // Settings State: Environment Variables
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
+  const [rawEnv, setRawEnv] = useState("");
   const [loadingEnv, setLoadingEnv] = useState(false);
+  const [loadingRawEnv, setLoadingRawEnv] = useState(false);
   const [newEnvKey, setNewEnvKey] = useState("");
   const [newEnvValue, setNewEnvValue] = useState("");
   const [addingEnv, setAddingEnv] = useState(false);
+  const [savingRawEnv, setSavingRawEnv] = useState(false);
+  const [rawEnvMode, setRawEnvMode] = useState(false);
   const [envActionMessage, setEnvActionMessage] = useState("");
 
   // Files Tab State
@@ -603,6 +607,56 @@ export default function ProjectDetailPage({
         fetchEnvVars();
       }
     } catch { /* silent */ }
+  };
+
+  // Load the raw file only when the user explicitly opens the editor.
+  const handleOpenRawEnv = async () => {
+    setLoadingRawEnv(true);
+    setEnvActionMessage("");
+    try {
+      const res = await fetch(`/api/projects/${id}/env?view=raw`);
+      if (!res.ok) {
+        setEnvActionMessage("Unable to load the raw .env file");
+        return;
+      }
+      const data = await res.json();
+      setRawEnv(data.rawContent || "");
+      setRawEnvMode(true);
+    } catch {
+      setEnvActionMessage("Unable to load the raw .env file");
+    } finally {
+      setLoadingRawEnv(false);
+    }
+  };
+
+  const handleCloseRawEnv = () => {
+    setRawEnvMode(false);
+    setRawEnv("");
+  };
+
+  // Save the raw .env file without returning its contents in the response.
+  const handleSaveRawEnv = async () => {
+    setSavingRawEnv(true);
+    setEnvActionMessage("");
+    try {
+      const res = await fetch(`/api/projects/${id}/env`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "raw", content: rawEnv }),
+      });
+      if (res.ok) {
+        handleCloseRawEnv();
+        setEnvActionMessage("Saved .env configuration");
+        setTimeout(() => setEnvActionMessage(""), 3000);
+        fetchEnvVars();
+      } else {
+        setEnvActionMessage("Unable to save the .env file");
+      }
+    } catch {
+      setEnvActionMessage("Unable to save the .env file");
+    } finally {
+      setSavingRawEnv(false);
+    }
   };
 
   // Save AI Memory Draft
@@ -1452,6 +1506,14 @@ export default function ProjectDetailPage({
                         Variables are automatically loaded from and saved directly into the project root <code className="text-white/80 font-mono">.env</code>.
                       </p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={rawEnvMode ? handleCloseRawEnv : handleOpenRawEnv}
+                      disabled={loadingRawEnv}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white/[0.05] hover:bg-white/10 text-white/70 hover:text-white border border-white/[0.08] transition-all flex-shrink-0 cursor-pointer disabled:opacity-50"
+                    >
+                      {loadingRawEnv ? "Loading..." : rawEnvMode ? "Structured View" : "Raw .env Editor"}
+                    </button>
                   </div>
 
                   {envActionMessage && (
@@ -1460,6 +1522,36 @@ export default function ProjectDetailPage({
                     </div>
                   )}
 
+                  {rawEnvMode ? (
+                    <div className="space-y-3 mt-4">
+                      <textarea
+                        rows={10}
+                        value={rawEnv}
+                        onChange={(e) => setRawEnv(e.target.value)}
+                        placeholder="# Define your .env keys here\nPORT=4000\nDATABASE_URL=..."
+                        className="w-full bg-[#121212] border border-white/10 focus:border-white/25 focus:outline-none font-mono text-xs text-white p-3.5 leading-relaxed rounded-xl"
+                        style={{ resize: "vertical" }}
+                      />
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCloseRawEnv}
+                          className="text-white/60 hover:text-white text-xs px-3 py-2 rounded-xl border border-white/[0.08] transition-all cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveRawEnv}
+                          disabled={savingRawEnv}
+                          className="bg-white text-black font-bold text-xs px-4 py-2 rounded-xl hover:bg-white/90 active:scale-95 transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                          {savingRawEnv && <SpinIcon size={12} />}
+                          <span>Save .env File</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
                   <div className="space-y-4 mt-4">
                       {/* Add Variable Form */}
                       <form onSubmit={handleAddEnvVar} className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 items-end p-4 rounded-xl bg-[#111111] border border-white/[0.06]">
@@ -1539,6 +1631,7 @@ export default function ProjectDetailPage({
                         </div>
                       )}
                   </div>
+                  )}
                 </div>
 
                 {/* 5. DANGER ZONE SECTION */}

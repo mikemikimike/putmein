@@ -41,3 +41,12 @@ test("create, update, and delete response shapes never reveal changed values", (
     assert.equal(JSON.stringify(response).includes("secret"), false);
   }
 });
+
+test("masked response keeps raw editor data out of the default payload", () => {
+  const response = toPublicEnvResponse(true, "COMMENT=keep this line\nTOKEN=editor-secret");
+
+  assert.deepEqual(Object.keys(response).sort(), ["exists", "vars"]);
+  assert.equal("rawContent" in response, false);
+  assert.equal(JSON.stringify(response).includes("keep this line"), false);
+  assert.equal(JSON.stringify(response).includes("editor-secret"), false);
+});

@@ -43,6 +43,13 @@ export async function GET(
       console.warn("Error reading .env:", readErr);
     }
 
+    if (new URL(req.url).searchParams.get("view") === "raw") {
+      return NextResponse.json(
+        { exists, rawContent },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
     return NextResponse.json(toPublicEnvResponse(exists, rawContent));
   } catch (err) {
     console.error("GET /api/projects/[id]/env:", err);
