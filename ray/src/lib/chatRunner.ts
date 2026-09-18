@@ -243,6 +243,7 @@ class ChatRunnerManager {
       const decoder = new TextDecoder();
       let rawBuffer = "";
       let hasStreamFinished = false;
+      let streamError: string | undefined;
 
       const processLine = (line: string) => {
         if (!line.trim()) return;
@@ -261,10 +262,14 @@ class ChatRunnerManager {
 
         // Error marker in AI SDK format (3:"...")
         if (line.startsWith("3:")) {
+          const payload = line.slice(2).trim();
           try {
-            const parsed = JSON.parse(line.slice(2));
-            if (typeof parsed === "string") run.error = parsed;
-          } catch {}
+            const parsed: unknown = JSON.parse(payload);
+            streamError = typeof parsed === "string" ? parsed : payload;
+          } catch {
+            streamError = payload || "Error generating response";
+          }
+          run.error = streamError;
           hasStreamFinished = true;
           return;
         }
@@ -347,6 +352,31 @@ class ChatRunnerManager {
         processLine(rawBuffer);
       }
 
+      // A Brain error frame is terminal. Do not turn an errored run into a
+      // successful completion by appending a finish marker after it.
+      if (streamError) {
+        run.status = "error";
+        run.completedAt = Date.now();
+        try {
+          await prisma.rayChatMessage.create({
+            data: {
+              sessionId,
+              role: "assistant",
+              content: streamError,
+            },
+          });
+          await prisma.rayChatSession.update({
+            where: { id: sessionId },
+            data: { updatedAt: new Date() },
+          });
+        } catch (saveErr) {
+          console.error(`[ChatRunner] Failed saving error message for session ${sessionId}:`, saveErr);
+        }
+        this.closeSubscribers(run);
+        this.scheduleRunCleanup(sessionId, 60000);
+        return;
+      }
+
       // Finalize message content
       const finalFullContent = run.fullAssistantText.trim();
       let savedAssistantContent = finalFullContent;
@@ -393,14 +423,17 @@ class ChatRunnerManager {
       this.scheduleRunCleanup(sessionId, 60000);
     } catch (err: any) {
       const isAbort = err?.name === "AbortError" || abortController.signal.aborted;
-      const errorMsg = isAbort ? "Generation stopped." : (err?.message || "Error generating response");
+      let errorMsg = isAbort ? "Generation stopped." : (err?.message || "Error generating response");
+      if (!isAbort && (errorMsg.includes("fetch failed") || errorMsg.includes("ECONNREFUSED"))) {
+        errorMsg = "Unable to connect to PutmeIn Brain AI service. Please ensure PutmeIn background services are running (run 'ray start' or 'ray status').";
+      }
       console.error(`[ChatRunner] Run error for session ${sessionId}:`, errorMsg);
 
       run.status = isAbort ? "completed" : "error";
       run.error = errorMsg;
       run.completedAt = Date.now();
 
-      // Save partial message if any content was produced
+      // Save partial message if any content was produced, or error message
       if (run.fullAssistantText.trim() || run.toolBlocks.length > 0) {
         try {
           const meta = {
@@ -417,6 +450,22 @@ class ChatRunnerManager {
           });
         } catch (saveErr) {
           console.error(`[ChatRunner] Failed saving partial message for session ${sessionId}:`, saveErr);
+        }
+      } else if (!isAbort) {
+        try {
+          await prisma.rayChatMessage.create({
+            data: {
+              sessionId,
+              role: "assistant",
+              content: errorMsg,
+            },
+          });
+          await prisma.rayChatSession.update({
+            where: { id: sessionId },
+            data: { updatedAt: new Date() },
+          });
+        } catch (saveErr) {
+          console.error(`[ChatRunner] Failed saving error message for session ${sessionId}:`, saveErr);
         }
       }
 

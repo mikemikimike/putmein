@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { verifyGithubWebhookSignature } from "@/lib/github-webhook";
 
+const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
+
 // POST /api/webhooks/github/[id] — receives GitHub webhook events
 export async function POST(
   req: NextRequest,
@@ -27,11 +29,12 @@ export async function POST(
 
     const rawBody = await req.text();
     const signature = req.headers.get("x-hub-signature-256");
-    const hasValidSignature = pipeline.user.githubIntegrations.some(
-      ({ webhookSecret }: { webhookSecret: string | null }) =>
-        verifyGithubWebhookSignature(rawBody, signature, webhookSecret)
-    );
-    if (!hasValidSignature) {
+    const integration = await prisma.rayGithubIntegration.findFirst({
+      where: { userId: pipeline.userId },
+      select: { webhookSecret: true },
+    });
+
+    if (!verifyGithubWebhookSignature(rawBody, signature, integration?.webhookSecret)) {
       return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
     }
 
@@ -41,6 +44,7 @@ export async function POST(
       head_commit?: { id?: string; message?: string; author?: { name?: string } };
       pusher?: { name?: string };
     };
+
     try {
       body = JSON.parse(rawBody);
     } catch {

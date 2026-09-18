@@ -307,7 +307,10 @@ func GetManagedProcess(projectID string) *ManagedProcess {
 			mp.URL = url
 		}
 	}
-	return mp
+	// Return a snapshot so callers cannot read fields from the shared process
+	// while another operation updates the managed process under managedMu.
+	snapshot := *mp
+	return &snapshot
 }
 
 var (

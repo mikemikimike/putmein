@@ -18,5 +18,6 @@ export function verifyGithubWebhookSignature(
 
   const expectedDigest = createHmac("sha256", secret).update(rawBody, "utf8").digest();
   const receivedDigest = Buffer.from(providedDigest, "hex");
+
   return receivedDigest.length === expectedDigest.length && timingSafeEqual(receivedDigest, expectedDigest);
 }
