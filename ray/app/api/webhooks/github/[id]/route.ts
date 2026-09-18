@@ -13,6 +13,15 @@ export async function POST(
     const { id } = await params;
     const pipeline = await prisma.rayPipeline.findUnique({
       where: { id },
+      include: {
+        user: {
+          select: {
+            githubIntegrations: {
+              select: { webhookSecret: true },
+            },
+          },
+        },
+      },
     });
     if (!pipeline) {
       return NextResponse.json({ error: "Pipeline not found" }, { status: 404 });
