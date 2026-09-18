@@ -754,10 +754,15 @@ func chatStreamHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	ai.FlushSSE(w)
 
+	client := ai.NewWithModel(modelID)
+	if strings.TrimSpace(client.Model.APIKey) == "" {
+		_ = ai.WriteSSEError(w, fmt.Sprintf("API key not configured: %s does not have an API key configured. Please add your API key in Settings > AI Model Keys.", client.Model.Name))
+		return
+	}
+
 	// Immediately emit an initial thinking delta so the UI indicates active reasoning right away
 	_ = ai.WriteSSEThinking(w, "Analyzing workspace and planning execution...\n\n")
 
-	client := ai.NewWithModel(modelID)
 	ctx := r.Context()
 
 	// Resolve real system user/host for terminal prompt display
@@ -1048,6 +1053,10 @@ func chatTUIHandler(w http.ResponseWriter, r *http.Request) {
 	ai.FlushSSE(w)
 
 	client := ai.NewWithModel(modelID)
+	if strings.TrimSpace(client.Model.APIKey) == "" {
+		_ = ai.WriteSSEError(w, fmt.Sprintf("API key not configured: %s does not have an API key configured. Please add your API key in Settings > AI Model Keys.", client.Model.Name))
+		return
+	}
 	ctx := r.Context()
 
 	// Resolve real system user/host for terminal prompt display

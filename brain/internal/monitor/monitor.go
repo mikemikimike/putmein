@@ -308,13 +308,21 @@ func (s *Service) startProject(ctx context.Context, p *Project) {
 	}()
 }
 
+// logPathsSnapshot returns a copy of the paths while holding the service lock.
+// AddLogPath may append to the project's slice concurrently with polling.
+func (s *Service) logPathsSnapshot(ps *projectState) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]string(nil), ps.project.LogPaths...)
+}
+
 // poll collects log data for one project and asks the AI to analyze it.
 func (s *Service) poll(ctx context.Context, ps *projectState) {
 	p := ps.project
 	var logChunks []string
 
 	// 1. Tail all tracked log files
-	for _, path := range p.LogPaths {
+	for _, path := range s.logPathsSnapshot(ps) {
 		chunk, newOffset, err := TailFile(path, ps.offsets[path])
 		if err != nil {
 			continue
