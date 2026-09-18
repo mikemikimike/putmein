@@ -220,18 +220,34 @@ function handleStatus() {
 
 function handleLogs() {
   const pm2 = getPm2Command();
-  if (!pm2) return;
+  if (!pm2) {
+    console.error(`${C.red}[ERROR]${C.reset} PM2 is required to view logs.`);
+    console.log(`Please install it globally using: ${C.yellow}npm install -g pm2${C.reset}`);
+    process.exit(1);
+  }
+
   console.log(`${C.cyan}Streaming live PutmeIn logs (Ctrl+C to exit)...${C.reset}\n`);
   const parts = pm2.split(" ");
   const command = parts[0];
   const baseArgs = parts.slice(1).concat(["logs", "putmein-ray", "putmein-brain", "--lines", "50"]);
-  const child = spawn(resolveSpawnCommand(command), baseArgs, {
-    stdio: "inherit",
-  });
+  const isWindows = process.platform === "win32";
 
-  child.on("error", (err) => {
+  try {
+    const child = spawn(resolveSpawnCommand(command), baseArgs, {
+      stdio: "inherit",
+      shell: isWindows,
+    });
+
+    child.on("error", (err) => {
+      console.error(`${C.red}[ERROR]${C.reset} Failed to stream PutmeIn logs: ${err.message}`);
+    });
+
+    child.on("exit", (code) => {
+      process.exit(code ?? 0);
+    });
+  } catch (err) {
     console.error(`${C.red}[ERROR]${C.reset} Failed to stream PutmeIn logs: ${err.message}`);
-  });
+  }
 }
 
 function handleStarter() {
@@ -274,8 +290,17 @@ function handleCohen() {
     process.exit(1);
   }
 
-  const child = spawn(cohenBin, [], { stdio: "inherit" });
-  child.on("exit", (code) => process.exit(code || 0));
+  try {
+    const child = spawn(cohenBin, [], { stdio: "inherit" });
+    child.on("error", (err) => {
+      console.error(`${C.red}[ERROR]${C.reset} Failed to launch Cohen: ${err.message}`);
+      process.exit(1);
+    });
+    child.on("exit", (code) => process.exit(code || 0));
+  } catch (err) {
+    console.error(`${C.red}[ERROR]${C.reset} Failed to launch Cohen: ${err.message}`);
+    process.exit(1);
+  }
 }
 
 function printHelp() {
