@@ -357,6 +357,21 @@ class ChatRunnerManager {
       if (streamError) {
         run.status = "error";
         run.completedAt = Date.now();
+        try {
+          await prisma.rayChatMessage.create({
+            data: {
+              sessionId,
+              role: "assistant",
+              content: streamError,
+            },
+          });
+          await prisma.rayChatSession.update({
+            where: { id: sessionId },
+            data: { updatedAt: new Date() },
+          });
+        } catch (saveErr) {
+          console.error(`[ChatRunner] Failed saving error message for session ${sessionId}:`, saveErr);
+        }
         this.closeSubscribers(run);
         this.scheduleRunCleanup(sessionId, 60000);
         return;
@@ -408,14 +423,17 @@ class ChatRunnerManager {
       this.scheduleRunCleanup(sessionId, 60000);
     } catch (err: any) {
       const isAbort = err?.name === "AbortError" || abortController.signal.aborted;
-      const errorMsg = isAbort ? "Generation stopped." : (err?.message || "Error generating response");
+      let errorMsg = isAbort ? "Generation stopped." : (err?.message || "Error generating response");
+      if (!isAbort && (errorMsg.includes("fetch failed") || errorMsg.includes("ECONNREFUSED"))) {
+        errorMsg = "Unable to connect to PutmeIn Brain AI service. Please ensure PutmeIn background services are running (run 'ray start' or 'ray status').";
+      }
       console.error(`[ChatRunner] Run error for session ${sessionId}:`, errorMsg);
 
       run.status = isAbort ? "completed" : "error";
       run.error = errorMsg;
       run.completedAt = Date.now();
 
-      // Save partial message if any content was produced
+      // Save partial message if any content was produced, or error message
       if (run.fullAssistantText.trim() || run.toolBlocks.length > 0) {
         try {
           const meta = {
@@ -432,6 +450,22 @@ class ChatRunnerManager {
           });
         } catch (saveErr) {
           console.error(`[ChatRunner] Failed saving partial message for session ${sessionId}:`, saveErr);
+        }
+      } else if (!isAbort) {
+        try {
+          await prisma.rayChatMessage.create({
+            data: {
+              sessionId,
+              role: "assistant",
+              content: errorMsg,
+            },
+          });
+          await prisma.rayChatSession.update({
+            where: { id: sessionId },
+            data: { updatedAt: new Date() },
+          });
+        } catch (saveErr) {
+          console.error(`[ChatRunner] Failed saving error message for session ${sessionId}:`, saveErr);
         }
       }
 
