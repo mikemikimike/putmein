@@ -77,6 +77,7 @@ export default function SecurityPage() {
   const [dataError, setDataError] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanningProject, setScanningProject] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   // Scan modal state
   const [showScanModal, setShowScanModal] = useState(false);
@@ -154,18 +155,17 @@ export default function SecurityPage() {
           trigger: "manual",
         }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `Security audit failed (${res.status})`);
       }
-
-      const data = await res.json();
-      if (data.scan) {
-        setScans((prev) => [data.scan, ...prev.filter((s) => s.id !== data.scan.id)]);
-        setSelectedScanReport(data.scan);
+      if (!data.scan) {
+        throw new Error("Security audit completed without a saved result. Please retry.");
       }
-    } catch (error: unknown) {
-      setScanError(error instanceof Error ? error.message : "Security audit failed");
+      setScans((prev) => [data.scan, ...prev.filter((s) => s.id !== data.scan.id)]);
+      setSelectedScanReport(data.scan);
+    } catch (err: unknown) {
+      setScanError(err instanceof Error ? err.message : "Security audit failed. Please retry.");
     } finally {
       setScanningProject(null);
       fetchData();
