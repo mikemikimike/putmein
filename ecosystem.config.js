@@ -2,6 +2,7 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const crypto = require("crypto");
+const dotenv = require("dotenv");
 
 // Load configuration from all possible env locations in priority order
 let userEnv = {};
@@ -15,16 +16,10 @@ const envCandidates = [
 
 for (const envPath of envCandidates) {
   if (fs.existsSync(envPath)) {
-    const content = fs.readFileSync(envPath, "utf-8");
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith("#") && trimmed.includes("=")) {
-        const idx = trimmed.indexOf("=");
-        const key = trimmed.slice(0, idx).trim();
-        const val = trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, "");
-        if (!userEnv[key]) {
-          userEnv[key] = val;
-        }
+    const parsedEnv = dotenv.parse(fs.readFileSync(envPath, "utf-8"));
+    for (const [key, value] of Object.entries(parsedEnv)) {
+      if (userEnv[key] === undefined) {
+        userEnv[key] = value;
       }
     }
   }
